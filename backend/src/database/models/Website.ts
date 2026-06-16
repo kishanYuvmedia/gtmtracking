@@ -74,7 +74,7 @@ export async function createWebsite(website: Omit<WebsiteRow, 'created_at' | 'up
       website.data_retention_days ?? 365,
       website.domain_verified ?? false,
       website.timezone || 'UTC',
-      JSON.stringify(website.allowed_origins || []),
+      website.allowed_origins || [],
     ]
   );
   return result.rows[0];
@@ -85,8 +85,7 @@ export async function updateWebsite(id: string, updates: Partial<WebsiteRow>) {
   if (keys.length === 0) return null;
   const setClause = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
   const values = keys.map(k => {
-    const val = (updates as Record<string, unknown>)[k];
-    return Array.isArray(val) ? JSON.stringify(val) : val;
+    return (updates as Record<string, unknown>)[k];
   });
   const result = await query(
     `UPDATE websites SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,

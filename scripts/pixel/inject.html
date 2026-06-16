@@ -1,17 +1,10 @@
 <!-- GTM Tracking Pixel - Installation Snippet -->
 <script>
-(function(w,d,s,u){
+(function(w,d,s,u,k,wid){
+  w._gtmConfig = { apiKey: k, websiteId: wid, endpoint: u, debug: false };
   var js=d.createElement(s);
   js.async=true;
-  js.src=u;
-
-  // Configure tracker before script loads
-  w._gtmConfig = w._gtmConfig || {
-    apiKey: 'YOUR_API_KEY',
-    endpoint: 'https://collect.domain.com',
-    debug: false
-  };
-
+  js.src=u+'/tracker.js';
   d.head.appendChild(js);
-})(window,document,'script','https://cdn.domain.com/tracker.js');
+})(window,document,'script','https://collect.domain.com','YOUR_API_KEY','YOUR_WEBSITE_ID');
 </script>

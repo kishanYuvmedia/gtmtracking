@@ -6,6 +6,7 @@ import { batchRoutes } from './routes/batch';
 import { webhookRoutes } from './routes/webhooks';
 import { websiteRoutes } from './routes/websites';
 import { eventRoutes } from './routes/events';
+import { journeyRoutes } from './routes/journey';
 
 export const apiRouter = Router();
 
@@ -16,3 +17,4 @@ apiRouter.use('/batch', batchRoutes);
 apiRouter.use('/webhooks', webhookRoutes);
 apiRouter.use('/websites', websiteRoutes);
 apiRouter.use('/events', eventRoutes);
+apiRouter.use('/journeys', journeyRoutes);

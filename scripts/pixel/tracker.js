@@ -140,6 +140,32 @@
     };
   }
 
+  function getElementSelector(el) {
+    if (el.id) return '#' + el.id;
+    if (el.getAttribute('name')) return '[name="' + el.getAttribute('name') + '"]';
+    if (el.className && typeof el.className === 'string') {
+      var classes = el.className.trim().split(/\s+/).slice(0, 3).join('.');
+      if (classes) return el.tagName.toLowerCase() + '.' + classes;
+    }
+    return el.tagName.toLowerCase();
+  }
+
+  function isButton(el) {
+    return el.tagName === 'BUTTON' || el.tagName === 'INPUT' && (el.type === 'button' || el.type === 'submit');
+  }
+
+  function isLink(el) {
+    return el.tagName === 'A' && !!el.href;
+  }
+
+  function closestElement(el, tag) {
+    while (el && el !== document) {
+      if (el.tagName === tag) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
   var MyTracker = {
     config: {
       apiKey: '',
@@ -158,6 +184,7 @@
     pageLoadTime: null,
     scrollMaxDepth: 0,
     clickCount: 0,
+    history: [],
 
     init: function (options) {
       this.config.apiKey = options.apiKey || this.config.apiKey;
@@ -166,6 +193,7 @@
       this.config.debug = options.debug || false;
       this.config.batchSize = options.batchSize || this.config.batchSize;
       this.config.flushInterval = options.flushInterval || this.config.flushInterval;
+      this.history = this.loadHistory();
 
       this.checkConsent();
     },
@@ -236,6 +264,7 @@
       this.deviceInfo = device;
       this.networkInfo = network;
       this.locationInfo = location;
+      this.pageLoadTime = perf ? perf.load_time : null;
 
       this.setupEventListeners();
       this.startTimer();
@@ -276,6 +305,8 @@
 
       this.queue.push(event);
       this.log('[Track]', eventName, event.event_id);
+
+      this.addToHistory(event);
 
       if (this.queue.length >= this.config.batchSize) {
         this.flush();
@@ -359,7 +390,7 @@
     },
 
     setCookie: function (name, value, days) {
-      if (!this.started && name !== 'gtm_consent') return;
+      if (!this.started && name !== 'gtm_consent' && name !== 'gtm_history') return;
       var expires = '';
       if (days) {
         var date = new Date();
@@ -367,6 +398,31 @@
         expires = '; expires=' + date.toUTCString();
       }
       document.cookie = name + '=' + (value || '') + expires + '; path=/; SameSite=Lax';
+    },
+
+    loadHistory: function () {
+      try {
+        var raw = this.getCookie('gtm_history');
+        if (raw) return JSON.parse(decodeURIComponent(raw));
+      } catch (e) {}
+      return [];
+    },
+
+    saveHistory: function () {
+      var maxItems = 50;
+      var recent = this.history.slice(-maxItems);
+      try {
+        this.setCookie('gtm_history', encodeURIComponent(JSON.stringify(recent)), 7);
+      } catch (e) {}
+    },
+
+    addToHistory: function (event) {
+      this.history.push({
+        n: event.event_name,
+        u: event.properties && (event.properties.url || ''),
+        t: event.timestamp,
+      });
+      this.saveHistory();
     },
 
     startTimer: function () {
@@ -383,15 +439,46 @@
       document.addEventListener('click', function (e) {
         self.clickCount++;
         var target = e.target;
-        var text = (target.innerText || target.textContent || '').trim();
+        var text = (target.innerText || target.textContent || '').trim().slice(0, 100);
+        var selector = getElementSelector(target);
+
+        var btn = isButton(target) ? target : closestElement(target, 'BUTTON');
+        if (btn) {
+          self.track('ButtonClick', {
+            text: text,
+            selector: selector,
+            id: target.id || btn.id || '',
+            class: (target.className || btn.className || '').toString().slice(0, 100),
+            form_id: (closestElement(target, 'FORM') || {}).id || '',
+            pageX: e.pageX,
+            pageY: e.pageY,
+          });
+          return;
+        }
+
+        var link = isLink(target) ? target : closestElement(target, 'A');
+        if (link) {
+          self.track('LinkClick', {
+            text: text,
+            selector: selector,
+            href: link.href || '',
+            id: target.id || link.id || '',
+            class: (target.className || link.className || '').toString().slice(0, 100),
+            target: link.target || '',
+            pageX: e.pageX,
+            pageY: e.pageY,
+          });
+          return;
+        }
+
         self.track('Click', {
           target: target.tagName,
-          text: text.slice(0, 100),
+          text: text,
+          selector: selector,
           id: target.id || '',
-          class: target.className || '',
-          href: target.href || target.getAttribute('href') || '',
-          x: e.pageX,
-          y: e.pageY,
+          class: (target.className || '').toString().slice(0, 100),
+          pageX: e.pageX,
+          pageY: e.pageY,
         });
       });
 
@@ -440,6 +527,10 @@
           });
         });
       }
+    },
+
+    getHistory: function () {
+      return this.history;
     },
 
     log: function () {

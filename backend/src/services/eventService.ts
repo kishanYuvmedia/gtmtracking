@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { insertEvent, normalizeCollectBody } from '../database/models/Event';
-import { eventQueue } from '../queues/eventQueue';
+import { getQueue } from '../queues/eventQueue';
 import { AppError } from '../middleware/errorHandler';
 import { sessionService } from './sessionService';
 import type { CollectRequestBody } from '../types/dataModels';
@@ -53,7 +53,10 @@ export const eventService = {
       console.error('Session tracking error:', err);
     }
 
-    await eventQueue.add('process_event', event);
+    const queue = await getQueue();
+    if (queue) {
+      await queue.add('process_event', event);
+    }
 
     return event;
   },

@@ -1,26 +1,42 @@
-import { Queue } from 'bullmq';
-import IORedis from 'ioredis';
+import type { Queue } from 'bullmq';
 
-const redis = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-});
+let eventQueue: Queue | null = null;
 
-const connection = redis as unknown as import('bullmq').ConnectionOptions;
+export async function getQueue(): Promise<Queue | null> {
+  if (eventQueue !== undefined) return eventQueue;
 
-export const eventQueue = new Queue('events', {
-  connection,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 5000,
-    },
-    removeOnComplete: 1000,
-    removeOnFail: 100,
-  },
-});
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    eventQueue = null;
+    return null;
+  }
 
-export async function closeQueue() {
-  await eventQueue.close();
-  await redis.quit();
+  try {
+    const IORedis = (await import('ioredis')).default;
+    const { Queue: BullQueue } = await import('bullmq');
+
+    const redis = new IORedis(redisUrl, {
+      maxRetriesPerRequest: null,
+      lazyConnect: true,
+      retryStrategy: () => null,
+    });
+
+    redis.on('error', () => {});
+
+    eventQueue = new BullQueue('events', {
+      connection: redis as unknown as import('bullmq').ConnectionOptions,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 1000,
+        removeOnFail: 100,
+      },
+    });
+  } catch {
+    eventQueue = null;
+  }
+
+  return eventQueue;
 }
+
+export { eventQueue };

@@ -25,8 +25,8 @@ CREATE TABLE IF NOT EXISTS websites (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_websites_user_id ON websites(user_id);
-CREATE INDEX idx_websites_api_key ON websites(api_key);
+CREATE INDEX IF NOT EXISTS idx_websites_user_id ON websites(user_id);
+CREATE INDEX IF NOT EXISTS idx_websites_api_key ON websites(api_key);
 
 -- Events table
 CREATE TABLE IF NOT EXISTS events (
@@ -40,11 +40,11 @@ CREATE TABLE IF NOT EXISTS events (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_events_website_id ON events(website_id);
-CREATE INDEX idx_events_event_name ON events(event_name);
-CREATE INDEX idx_events_visitor_id ON events(visitor_id);
-CREATE INDEX idx_events_session_id ON events(session_id);
-CREATE INDEX idx_events_created_at ON events(created_at);
+CREATE INDEX IF NOT EXISTS idx_events_website_id ON events(website_id);
+CREATE INDEX IF NOT EXISTS idx_events_event_name ON events(event_name);
+CREATE INDEX IF NOT EXISTS idx_events_visitor_id ON events(visitor_id);
+CREATE INDEX IF NOT EXISTS idx_events_session_id ON events(session_id);
+CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
 
 -- Event logs table
 CREATE TABLE IF NOT EXISTS event_logs (
@@ -55,8 +55,8 @@ CREATE TABLE IF NOT EXISTS event_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_event_logs_event_id ON event_logs(event_id);
-CREATE INDEX idx_event_logs_status ON event_logs(status);
+CREATE INDEX IF NOT EXISTS idx_event_logs_event_id ON event_logs(event_id);
+CREATE INDEX IF NOT EXISTS idx_event_logs_status ON event_logs(status);
 
 -- Rules table
 CREATE TABLE IF NOT EXISTS rules (
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS rules (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_rules_website_id ON rules(website_id);
+CREATE INDEX IF NOT EXISTS idx_rules_website_id ON rules(website_id);
 
 -- Consent logs table (GDPR)
 CREATE TABLE IF NOT EXISTS consent_logs (
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS consent_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_consent_logs_visitor_id ON consent_logs(visitor_id);
+CREATE INDEX IF NOT EXISTS idx_consent_logs_visitor_id ON consent_logs(visitor_id);
 
 -- Sessions table
 CREATE TABLE IF NOT EXISTS sessions (
@@ -97,5 +97,5 @@ CREATE TABLE IF NOT EXISTS sessions (
     last_activity TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_sessions_visitor_id ON sessions(visitor_id);
-CREATE INDEX idx_sessions_website_id ON sessions(website_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_visitor_id ON sessions(visitor_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_website_id ON sessions(website_id);
