@@ -12,8 +12,9 @@ export const journeyController = {
 
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
       const offset = parseInt(req.query.offset as string) || 0;
+      const websiteId = req.query.website_id as string || undefined;
 
-      const journey = await getJourneyByVisitor(visitorId, req.user!.userId, limit, offset);
+      const journey = await getJourneyByVisitor(visitorId, req.user!.userId, limit, offset, websiteId);
       if (!journey) {
         res.json({
           visitor_id: visitorId,
@@ -37,8 +38,9 @@ export const journeyController = {
       const search = req.query.q as string | undefined;
       const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
       const offset = parseInt(req.query.offset as string) || 0;
+      const websiteId = req.query.website_id as string || undefined;
 
-      const visitors = await searchVisitorsByWebsite(req.user!.userId, search, limit, offset);
+      const visitors = await searchVisitorsByWebsite(req.user!.userId, search, limit, offset, websiteId);
       res.json({ visitors });
     } catch (err) {
       next(err);

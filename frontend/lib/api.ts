@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+const API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
 type ApiResponse<T> = T & { error?: string };
 
@@ -32,6 +32,7 @@ async function request<T = Record<string, unknown>>(
 }
 
 export const api = {
+  // ── Auth ──
   register(name: string, email: string, password: string) {
     return request<{ user: { id: string; name: string; email: string }; token: string }>('/auth/register', {
       method: 'POST',
@@ -50,8 +51,9 @@ export const api = {
     return request<{ user: { id: string; name: string; email: string } }>('/auth/profile');
   },
 
+  // ── Websites ──
   getWebsites() {
-    return request<{ websites: Array<{ id: string; domain: string; api_key: string; pixel_id: string; event_count: number; created_at: string }> }>('/websites');
+    return request<{ websites: Array<{ id: string; domain: string; api_key: string; pixel_id: string; name: string; status: string; event_count: number; events_24h: number; visitor_count: number; created_at: string }> }>('/websites');
   },
 
   createWebsite(domain: string) {
@@ -61,30 +63,57 @@ export const api = {
     });
   },
 
+  getWebsite(id: string) {
+    return request<{ website: Record<string, unknown>; adSummary: Record<string, unknown>; eventNames: Array<Record<string, unknown>> }>(`/websites/${id}`);
+  },
+
   getWebsiteScript(id: string) {
     return request<{ script: string; website: { id: string; domain: string; api_key: string } }>(`/websites/${id}/script`);
   },
 
-  getEvents(limit = 50, offset = 0) {
-    return request<{ events: Array<{
-      id: string;
-      event_name: string;
-      event_id: string;
-      session_id: string;
-      visitor_id: string;
-      website_domain: string;
-      properties: Record<string, unknown>;
-      device_info: Record<string, unknown> | null;
-      page_info: Record<string, unknown> | null;
-      performance_info: Record<string, unknown> | null;
-      network_info: Record<string, unknown> | null;
-      location_info: Record<string, unknown> | null;
-      payload: Record<string, unknown> | null;
-      created_at: string;
-    }> }>(`/events?limit=${limit}&offset=${offset}`);
-  },
-
-  getEventStats() {
-    return request<{ stats: { total_events: number; total_sessions: number; total_visitors: number; total_websites: number } }>('/events/stats');
+  getWebsiteEventReport(id: string, filters: {
+    date_from?: string;
+    date_to?: string;
+    period?: string;
+    event_name?: string;
+    visitor_id?: string;
+    limit?: number;
+    offset?: number;
+  } = {}) {
+    const params = new URLSearchParams();
+    if (filters.date_from) params.set('date_from', filters.date_from);
+    if (filters.date_to) params.set('date_to', filters.date_to);
+    if (filters.period) params.set('period', filters.period);
+    if (filters.event_name) params.set('event_name', filters.event_name);
+    if (filters.visitor_id) params.set('visitor_id', filters.visitor_id);
+    if (filters.limit) params.set('limit', String(filters.limit));
+    if (filters.offset) params.set('offset', String(filters.offset));
+    const qs = params.toString();
+    return request<{
+      summary: {
+        total_events: number;
+        total_visitors: number;
+        total_sessions: number;
+        event_types: Array<{ name: string; count: number }>;
+      };
+      timeline: Array<{ date: string; count: number }>;
+      visitors: {
+        browsers: Array<{ name: string; count: number }>;
+        os: Array<{ name: string; count: number }>;
+        device_types: Array<{ name: string; count: number }>;
+      };
+      events: Array<{
+        id: string;
+        event_name: string;
+        event_id: string;
+        session_id: string;
+        visitor_id: string;
+        properties: Record<string, unknown>;
+        device_info: Record<string, unknown> | null;
+        page_info: Record<string, unknown> | null;
+        location_info: Record<string, unknown> | null;
+        created_at: string;
+      }>;
+    }>(`/websites/${id}/event-report${qs ? `?${qs}` : ''}`);
   },
 };

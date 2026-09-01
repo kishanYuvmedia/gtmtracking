@@ -1,4 +1,6 @@
-import { query } from '../index';
+import { Session } from './Session';
+import { Event } from './Event';
+import { Website } from './Website';
 
 export interface JourneyEvent {
   id: string;
@@ -48,79 +50,72 @@ export async function getJourneyByVisitor(
   visitorId: string,
   userId: string,
   limit = 50,
-  offset = 0
+  offset = 0,
+  websiteId?: string
 ): Promise<JourneyResponse | null> {
-  const sessionResult = await query(
-    `SELECT
-       s.id as session_id,
-       s.landing_page,
-       s.exit_page,
-       s.page_views,
-       s.duration_seconds,
-       s.referrer,
-       s.utm_source,
-       s.utm_medium,
-       s.utm_campaign,
-       s.ip_address,
-       s.device_info,
-       s.location_info,
-       s.started_at,
-       s.last_activity
-     FROM sessions s
-     JOIN websites w ON w.id = s.website_id
-     WHERE s.visitor_id = $1 AND w.user_id = $2
-     ORDER BY s.started_at DESC
-     LIMIT $3 OFFSET $4`,
-    [visitorId, userId, limit, offset]
-  );
+  const websites = await Website.find({ user_id: userId }).select('_id domain');
+  const websiteIds = websites.map(w => w._id as string);
+  const domainMap = new Map(websites.map(w => [w._id as string, w.domain as string]));
 
-  if (sessionResult.rows.length === 0) {
+  const sessionFilter: Record<string, unknown> = {
+    visitor_id: visitorId,
+    website_id: { $in: websiteIds },
+  };
+  if (websiteId) sessionFilter.website_id = websiteId;
+
+  const sessionRows = await Session.find(sessionFilter as any)
+    .sort({ started_at: -1 })
+    .skip(offset)
+    .limit(limit);
+
+  if (sessionRows.length === 0) {
     return null;
   }
 
-  const sessionIds = sessionResult.rows.map(r => r.session_id);
+  const sessionIds = sessionRows.map(s => s._id as string);
 
-  const eventResult = await query(
-    `SELECT
-       e.id, e.website_id, w.domain as website_domain,
-       e.event_name, e.event_id, e.session_id, e.visitor_id,
-       e.payload, e.properties, e.device_info, e.page_info,
-       e.network_info, e.location_info, e.created_at
-     FROM events e
-     JOIN websites w ON w.id = e.website_id
-     WHERE e.session_id = ANY($1::uuid[]) AND w.user_id = $2
-     ORDER BY e.created_at ASC`,
-    [sessionIds, userId]
-  );
+  const eventFilter: Record<string, unknown> = {
+    session_id: { $in: sessionIds },
+    website_id: { $in: websiteIds },
+  };
+  if (websiteId) eventFilter.website_id = websiteId;
+
+  const eventRows = await Event.find(eventFilter as any).sort({ created_at: 1 });
 
   const eventsBySession = new Map<string, JourneyEvent[]>();
-  for (const row of eventResult.rows) {
-    const sid = row.session_id;
+  for (const row of eventRows) {
+    const obj = row.toObject();
+    const journeyEvent: JourneyEvent = {
+      ...obj,
+      id: obj._id as string,
+      website_domain: domainMap.get(obj.website_id) || null,
+    };
+    const sid = obj.session_id as string;
     if (!eventsBySession.has(sid)) {
       eventsBySession.set(sid, []);
     }
-    eventsBySession.get(sid)!.push(row);
+    eventsBySession.get(sid)!.push(journeyEvent);
   }
 
-  const sessions: JourneySession[] = sessionResult.rows.map(row => ({
-    session_id: row.session_id,
-    landing_page: row.landing_page,
-    exit_page: row.exit_page,
-    page_views: row.page_views,
-    duration_seconds: row.duration_seconds,
-    referrer: row.referrer,
-    utm_source: row.utm_source,
-    utm_medium: row.utm_medium,
-    utm_campaign: row.utm_campaign,
-    ip_address: row.ip_address,
-    device_info: row.device_info,
-    location_info: row.location_info,
-    started_at: row.started_at,
-    last_activity: row.last_activity,
-    events: eventsBySession.get(row.session_id) || [],
+  const sessions: JourneySession[] = sessionRows.map(s => ({
+    session_id: s._id as string,
+    landing_page: s.landing_page,
+    exit_page: s.exit_page,
+    page_views: s.page_views,
+    duration_seconds: s.duration_seconds,
+    referrer: s.referrer,
+    utm_source: s.utm_source,
+    utm_medium: s.utm_medium,
+    utm_campaign: s.utm_campaign,
+    ip_address: s.ip_address,
+    device_info: s.device_info,
+    location_info: s.location_info,
+    started_at: s.started_at,
+    last_activity: s.last_activity,
+    events: eventsBySession.get(s._id as string) || [],
   }));
 
-  const allEvents = eventResult.rows;
+  const allEvents = eventRows;
   const firstEvent = allEvents.length > 0 ? allEvents[0].created_at : null;
   const lastEvent = allEvents.length > 0 ? allEvents[allEvents.length - 1].created_at : null;
 
@@ -138,37 +133,38 @@ export async function searchVisitorsByWebsite(
   userId: string,
   search?: string,
   limit = 20,
-  offset = 0
+  offset = 0,
+  websiteId?: string
 ) {
-  let sql: string;
-  let params: unknown[];
+  const websites = await Website.find({ user_id: userId }).select('_id');
+  const websiteIds = websites.map(w => w._id as string);
 
-  if (search) {
-    sql = `SELECT DISTINCT e.visitor_id,
-             MAX(e.created_at) as last_event_at,
-             COUNT(*)::int as total_events,
-             COUNT(DISTINCT e.session_id)::int as total_sessions
-           FROM events e
-           JOIN websites w ON w.id = e.website_id
-           WHERE w.user_id = $1 AND e.visitor_id ILIKE $2
-           GROUP BY e.visitor_id
-           ORDER BY last_event_at DESC
-           LIMIT $3 OFFSET $4`;
-    params = [userId, `%${search}%`, limit, offset];
-  } else {
-    sql = `SELECT DISTINCT e.visitor_id,
-             MAX(e.created_at) as last_event_at,
-             COUNT(*)::int as total_events,
-             COUNT(DISTINCT e.session_id)::int as total_sessions
-           FROM events e
-           JOIN websites w ON w.id = e.website_id
-           WHERE w.user_id = $1
-           GROUP BY e.visitor_id
-           ORDER BY last_event_at DESC
-           LIMIT $2 OFFSET $3`;
-    params = [userId, limit, offset];
-  }
+  const match: Record<string, unknown> = { website_id: { $in: websiteIds } };
+  if (websiteId) match.website_id = websiteId;
+  if (search) match.visitor_id = { $regex: search, $options: 'i' };
 
-  const result = await query(sql, params);
-  return result.rows;
+  const result = await Event.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$visitor_id',
+        last_event_at: { $max: '$created_at' },
+        total_events: { $sum: 1 },
+        total_sessions: { $addToSet: '$session_id' },
+      },
+    },
+    {
+      $project: {
+        visitor_id: '$_id',
+        last_event_at: 1,
+        total_events: 1,
+        total_sessions: { $size: '$total_sessions' },
+      },
+    },
+    { $sort: { last_event_at: -1 } },
+    { $skip: offset },
+    { $limit: limit },
+  ]);
+
+  return result;
 }

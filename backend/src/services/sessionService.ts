@@ -1,65 +1,79 @@
 import { v4 as uuidv4 } from 'uuid';
-import { query } from '../database/index';
-import type { CollectRequestBody, SessionData } from '../types/dataModels';
+import { Session } from '../database/models/Session';
+
+interface TrackEventInput {
+  event_name?: string;
+  website_id?: string;
+  session_id?: string;
+  visitor_id?: string;
+  properties?: Record<string, unknown>;
+  page?: Record<string, unknown> | null;
+  device?: Record<string, unknown> | null;
+  location?: Record<string, unknown> | null;
+  utm?: Record<string, unknown> | null;
+  referrer?: string;
+}
 
 export const sessionService = {
-  async trackEvent(body: CollectRequestBody, clientIp?: string | null, geo?: { country?: string | null; region?: string | null; city?: string | null }) {
+  async trackEvent(body: TrackEventInput, clientIp?: string | null, geo?: { country?: string | null; region?: string | null; city?: string | null }) {
     const sessionId = body.session_id || uuidv4();
-    const existing = await query(
-      'SELECT * FROM sessions WHERE visitor_id = $1 AND website_id = $2 AND last_activity > NOW() - INTERVAL \'30 minutes\' ORDER BY last_activity DESC LIMIT 1',
-      [body.visitor_id, body.website_id]
-    );
+    const since30m = new Date(Date.now() - 30 * 60 * 1000);
+    const existing = await Session.findOne({
+      visitor_id: body.visitor_id,
+      website_id: body.website_id,
+      last_activity: { $gte: since30m },
+    }).sort({ last_activity: -1 });
 
-    if (existing.rows.length > 0) {
-      const session = existing.rows[0];
-      await query(
-        `UPDATE sessions SET
-           last_activity = NOW(),
-           page_views = page_views + 1,
-           duration_seconds = EXTRACT(EPOCH FROM NOW() - started_at)::int,
-           exit_page = $3,
-           user_agent = COALESCE($4, user_agent),
-           ip_address = COALESCE($5, ip_address),
-           browser_timezone = COALESCE($6, browser_timezone)
-         WHERE id = $1`,
-        [
-          session.id,
-          body.page?.url || null,
-          body.device?.user_agent || null,
-          clientIp || null,
-          body.location?.timezone || null,
-        ]
+    if (existing) {
+      const url = body.page?.url || body.page?.page_url || null;
+      await Session.updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            last_activity: new Date(),
+            exit_page: url,
+            user_agent: body.device?.user_agent || existing.user_agent,
+            ip_address: clientIp || existing.ip_address,
+            browser_timezone: body.location?.timezone || existing.browser_timezone,
+            duration_seconds: Math.round((Date.now() - new Date(existing.started_at).getTime()) / 1000),
+          },
+          $inc: { page_views: 1 },
+        }
       );
-      return { sessionId: session.id, new: false };
+      return { sessionId: existing._id as string, new: false };
     }
 
-    const result = await query(
-      `INSERT INTO sessions
-         (id, visitor_id, website_id, referrer, landing_page, user_agent, ip_address,
-          browser_timezone, page_views, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
-          device_info, location_info)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, $11, $12, $13, $14, $15)
-       RETURNING *`,
-      [
-        uuidv4(),
-        body.visitor_id,
-        body.website_id,
-        body.page?.referrer || null,
-        body.page?.url || null,
-        body.device?.user_agent || null,
-        clientIp || null,
-        body.location?.timezone || null,
-        null, null, null, null, null,
-        body.device ? JSON.stringify(body.device) : null,
-        clientIp || geo ? JSON.stringify({
+    const utm = body.utm || {};
+    const location = clientIp || geo
+      ? {
           ip_address: clientIp || null,
           country: geo?.country || null,
           region: geo?.region || null,
           city: geo?.city || null,
-        }) : null,
-      ]
-    );
+        }
+      : null;
 
-    return { sessionId: result.rows[0].id, new: true };
+    await Session.create({
+      _id: sessionId,
+      visitor_id: body.visitor_id,
+      website_id: body.website_id,
+      referrer: body.referrer || body.page?.referrer || null,
+      landing_page: body.page?.url || body.page?.page_url || null,
+      user_agent: body.device?.user_agent || null,
+      ip_address: clientIp || null,
+      browser_timezone: body.location?.timezone || null,
+      utm_source: utm.source || utm.utm_source || null,
+      utm_medium: utm.medium || utm.utm_medium || null,
+      utm_campaign: utm.campaign || utm.utm_campaign || null,
+      utm_term: utm.term || utm.utm_term || null,
+      utm_content: utm.content || utm.utm_content || null,
+      device_info: body.device || null,
+      location_info: location,
+      page_views: 1,
+      started_at: new Date(),
+      last_activity: new Date(),
+    });
+
+    return { sessionId, new: true };
   },
 };

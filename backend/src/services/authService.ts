@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import { createUser, getUserByEmail, getUserById } from '../database/models/User';
+import { createUser, getUserByEmail, getUserById, updateLastLogin } from '../database/models/User';
 import { AppError } from '../middleware/errorHandler';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-jwt-secret';
@@ -42,6 +42,8 @@ export const authService = {
     if (!valid) {
       throw new AppError(401, 'Invalid email or password');
     }
+
+    await updateLastLogin(user.id);
 
     const token = jwt.sign(
       { userId: user.id, role: user.role },

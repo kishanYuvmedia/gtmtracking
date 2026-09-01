@@ -38,5 +38,3 @@ export async function getQueue(): Promise<Queue | null> {
 
   return eventQueue;
 }
-
-export { eventQueue };

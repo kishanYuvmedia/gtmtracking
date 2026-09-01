@@ -43,10 +43,15 @@ export async function validateApiKey(req: Request, _res: Response, next: NextFun
   if (!apiKey) {
     throw new AppError(401, 'Missing API key');
   }
-  const website = await getWebsiteByApiKey(apiKey);
-  if (!website) {
-    throw new AppError(401, 'Invalid API key');
+  try {
+    const website = await getWebsiteByApiKey(apiKey);
+    if (!website) {
+      throw new AppError(401, 'Invalid API key');
+    }
+    req.website = { id: website.id, apiKey: website.api_key };
+    next();
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError(401, 'Unable to validate API key');
   }
-  req.website = { id: website.id, apiKey: website.api_key };
-  next();
 }

@@ -1,18 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { AppError } from './errorHandler';
 
-const VALID_EVENTS = [
-  'PageView', 'Click', 'Scroll', 'FormSubmit',
-  'Purchase', 'AddToCart', 'Lead', 'Signup', 'Login',
-];
-
 export function validateCollect(req: Request, _res: Response, next: NextFunction) {
-  const { event_name, website_id } = req.body;
-  if (!event_name) {
-    throw new AppError(400, 'Missing required field: event_name');
-  }
-  if (!VALID_EVENTS.includes(event_name)) {
-    throw new AppError(400, `Invalid event_name. Must be one of: ${VALID_EVENTS.join(', ')}`);
+  const { event_name } = req.body;
+  const eventType = (req.body as any).event?.type;
+  if (!event_name && !eventType) {
+    throw new AppError(400, 'Missing required field: event_name or event.type');
   }
   next();
 }

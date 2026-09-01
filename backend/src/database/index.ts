@@ -1,28 +1,20 @@
 import './loadenv';
-import { Pool } from 'pg';
+import mongoose from 'mongoose';
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-});
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/gtmtracking';
 
-pool.on('error', (err) => {
-  console.error('Unexpected database pool error:', err);
-});
-
-export async function query(text: string, params?: unknown[]) {
-  const start = Date.now();
-  const result = await pool.query(text, params);
-  const duration = Date.now() - start;
-  console.log('Query executed', { text: text.slice(0, 80), duration, rows: result.rowCount });
-  return result;
+export async function testConnection(retries = 5, delay = 2000): Promise<boolean> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+      console.log('Database connection successful');
+      return true;
+    } catch (err) {
+      console.error(`DB connection attempt ${i + 1}/${retries} failed:`, (err as Error).message);
+      if (i < retries - 1) {
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  return false;
 }
-
-export async function getClient() {
-  const client = await pool.connect();
-  return client;
-}
-
-export default pool;

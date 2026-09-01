@@ -65,225 +65,69 @@ export interface LocationInfo {
   ip_address: string | null;
 }
 
-export interface BrowserEventPayload {
-  // ── Core event fields ──
-  event_name: string;
-  website_id: string;
-  session_id: string;
-  visitor_id: string;
-  event_id: string;
-  timestamp: string;
+// ─────────────────────────────────────────────
+// Event data shapes
+// ─────────────────────────────────────────────
 
-  // ── Event-specific properties ──
+export interface Identifiers {
+  event_id?: string;
+  session_id?: string;
+  visitor_id?: string;
+  website?: string;
+  time?: string;
+  sdk_version?: string;
+}
+
+export interface EventPayload {
+  type: string;
   properties: Record<string, unknown>;
-
-  // ── Enriched context (captured by tracker) ──
-  page?: Partial<PageInfo>;
-  device?: Partial<DeviceInfo>;
-  network?: Partial<NetworkInfo>;
-  performance?: Partial<PerformanceInfo>;
-
-  // ── Enriched context (set server-side) ──
-  location?: Partial<LocationInfo>;
 }
 
-// ─────────────────────────────────────────────
-// Event-specific property shapes
-// ─────────────────────────────────────────────
-
-export interface PageViewProperties {
-  url: string;
-  title: string;
-  referrer: string;
+export interface EngagementData {
+  time_on_page_ms?: number;
+  scroll_depth_percent?: number;
+  mouse_movements?: number;
+  click_count?: number;
+  keypress_count?: number;
+  rage_click?: boolean;
+  inactive_time_ms?: number;
+  active_time_ms?: number;
 }
 
-export interface ClickProperties {
-  target: string;
-  text: string;
-  id: string;
-  class: string;
-  href?: string;
-  x?: number;
-  y?: number;
+export interface SessionSectionData {
+  session_duration_ms?: number;
+  event_count?: number;
+  pageviews?: number;
+  entry_page?: string;
+  exit_page?: string;
+  bounce?: boolean;
 }
 
-export interface ScrollProperties {
-  percentage: number;
-  depth_px: number;
-  max_depth: number;
+export interface AttributionData {
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
+  gclid?: string;
+  fbclid?: string;
+  msclkid?: string;
+  ttclid?: string;
+  affiliate_id?: string;
+  campaign_id?: string;
 }
 
-export interface FormSubmitProperties {
-  form_id: string;
-  form_action: string;
-  form_method: string;
-  field_count: number;
+export interface ConsentData {
+  consent_status?: string;
+  analytics?: boolean;
+  marketing?: boolean;
+  preferences?: boolean;
 }
 
-export interface EcommerceProperties {
-  currency: string;
-  value: number;
-  items?: Array<{
-    product_id: string;
-    name: string;
-    category?: string;
-    quantity: number;
-    price: number;
-  }>;
-}
-
-export interface PurchaseProperties extends EcommerceProperties {
-  transaction_id: string;
-  shipping?: number;
-  tax?: number;
-  coupon?: string;
-}
-
-export interface LeadProperties {
-  form_id: string;
-  value?: number;
-  currency?: string;
-}
-
-export interface SignupProperties {
-  method: 'email' | 'google' | 'facebook' | 'apple' | 'other';
-}
-
-export interface LoginProperties {
-  method: 'email' | 'google' | 'facebook' | 'apple' | 'other';
-}
-
-// ─────────────────────────────────────────────
-// Website Data — stored per tracked domain
-// ─────────────────────────────────────────────
-
-export interface WebsiteData {
-  // Core
-  id: string;
-  user_id: string;
-  domain: string;
-  name: string | null;
-  description: string | null;
-  api_key: string;
-  pixel_id: string;
-  status: 'active' | 'paused' | 'disabled';
-
-  // Meta Conversion API
-  meta_access_token: string | null;
-  meta_ad_account_id: string | null;
-  meta_test_event_code: string | null;
-
-  // Auto-tracking config
-  auto_track_pageview: boolean;
-  auto_track_click: boolean;
-  auto_track_scroll: boolean;
-  auto_track_form: boolean;
-  cookie_domain: string | null;
-
-  // Compliance
-  gdpr_enabled: boolean;
-  consent_mode: 'default' | 'tcf' | 'cookiebot' | 'onetrust' | 'manual';
-  data_retention_days: number;
-
-  // Domain verification
-  domain_verified: boolean;
-  verification_token: string | null;
-  verified_at: Date | null;
-
-  // Branding
-  favicon: string | null;
-  primary_color: string | null;
-
-  // Meta
-  timezone: string;
-  script_version: number;
-  allowed_origins: string[];
-  last_event_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
-// ─────────────────────────────────────────────
-// User Data — platform account owners
-// ─────────────────────────────────────────────
-
-export interface UserData {
-  // Core
-  id: string;
-  name: string;
-  email: string;
-  company: string | null;
-  phone: string | null;
-  avatar: string | null;
-
-  // Account
-  role: 'admin' | 'customer';
-  status: 'active' | 'suspended' | 'disabled';
-  email_verified: boolean;
-  email_verified_at: Date | null;
-  last_login_at: Date | null;
-  password_changed_at: Date | null;
-
-  // Preferences
-  timezone: string;
-  locale: string;
-  notification_settings: NotificationSettings;
-
-  // Billing
-  plan: 'free' | 'starter' | 'professional' | 'enterprise';
-  stripe_customer_id: string | null;
-  subscription_status: string | null;
-  trial_ends_at: Date | null;
-  events_this_month: number;
-  events_limit: number;
-
-  // Meta
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface NotificationSettings {
-  email_notifications: boolean;
-  weekly_report: boolean;
-  monthly_report: boolean;
-  alert_on_high_events: boolean;
-  alert_threshold: number | null;
-}
-
-// ─────────────────────────────────────────────
-// Visitor / Session models
-// ─────────────────────────────────────────────
-
-export interface SessionData {
-  id: string;
-  visitor_id: string;
-  website_id: string;
-  device: Partial<DeviceInfo> | null;
-  location: Partial<LocationInfo> | null;
-  utm_source: string | null;
-  utm_medium: string | null;
-  utm_campaign: string | null;
-  utm_term: string | null;
-  utm_content: string | null;
-  referrer: string | null;
-  landing_page: string | null;
-  exit_page: string | null;
-  page_views: number;
-  duration_seconds: number;
-  browser_timezone: string | null;
-  user_agent: string | null;
-  ip_address: string | null;
-  started_at: Date;
-  last_activity: Date;
-}
-
-// ─────────────────────────────────────────────
-// API shapes
-// ─────────────────────────────────────────────
-
+// Legacy flat format (backward compat)
 export interface CollectRequestBody {
-  event_name: string;
-  website_id?: string; // overridden server-side
+  event_name?: string;
+  website_id?: string;
   session_id?: string;
   visitor_id?: string;
   event_id?: string;
@@ -294,6 +138,22 @@ export interface CollectRequestBody {
   network?: Partial<NetworkInfo>;
   performance?: Partial<PerformanceInfo>;
   location?: Partial<LocationInfo>;
+  utm?: {
+    source?: string;
+    medium?: string;
+    campaign?: string;
+    term?: string;
+    content?: string;
+  };
+  ad?: Record<string, string>;
+  referrer?: string;
+  // V3 fields pass through
+  identifiers?: Identifiers;
+  attribution?: AttributionData;
+  engagement?: EngagementData;
+  consent?: ConsentData;
+  session?: SessionSectionData;
+  custom?: Record<string, unknown>;
 }
 
 export interface IdentifyRequestBody {

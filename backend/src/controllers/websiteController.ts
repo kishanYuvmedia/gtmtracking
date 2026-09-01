@@ -1,10 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
-import { createWebsite, getWebsitesByUserId } from '../database/models/Website';
+import { createWebsite, getWebsitesByUserId, getWebsiteByIdWithStats, getWebsiteEvents, getWebsiteAdSummary, getWebsiteEventNames, getWebsiteEventReport } from '../database/models/Website';
 import { AppError } from '../middleware/errorHandler';
 
-const COLLECTOR_URL = process.env.COLLECTOR_URL || 'http://localhost:4000';
+const COLLECTOR_URL = () => process.env.COLLECTOR_URL!;
 
 export const websiteController = {
   async create(req: Request, res: Response, next: NextFunction) {
@@ -18,29 +18,10 @@ export const websiteController = {
         domain,
         name: domain,
         api_key: crypto.randomBytes(32).toString('hex'),
-        pixel_id: '',
         status: 'active',
-        auto_track_pageview: true,
-        auto_track_click: true,
-        auto_track_scroll: true,
-        auto_track_form: true,
-        cookie_domain: null,
-        gdpr_enabled: false,
-        consent_mode: 'default',
-        data_retention_days: 365,
-        domain_verified: false,
-        verification_token: null,
-        verified_at: null,
-        favicon: null,
-        primary_color: null,
-        timezone: 'UTC',
-        script_version: 1,
-        allowed_origins: [],
-        last_event_at: null,
-        meta_access_token: null,
-        meta_ad_account_id: null,
-        meta_test_event_code: null,
         description: null,
+        timezone: 'UTC',
+        last_event_at: null,
       });
 
       res.status(201).json({ website });
@@ -58,6 +39,37 @@ export const websiteController = {
     }
   },
 
+  async detail(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const website = await getWebsiteByIdWithStats(id, req.user!.userId);
+      if (!website) throw new AppError(404, 'Website not found');
+
+      const adSummary = await getWebsiteAdSummary(id, req.user!.userId);
+      const eventNames = await getWebsiteEventNames(id, req.user!.userId);
+
+      res.json({ website, adSummary, eventNames });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async listEvents(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const website = await getWebsiteByIdWithStats(id, req.user!.userId);
+      if (!website) throw new AppError(404, 'Website not found');
+
+      const events = await getWebsiteEvents(id, req.user!.userId, limit, offset);
+      res.json({ events });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async script(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -65,18 +77,38 @@ export const websiteController = {
       const website = websites.find((w: { id: string }) => w.id === id);
       if (!website) throw new AppError(404, 'Website not found');
 
-      const script = `<!-- GTM Tracking Pixel -->
+      const collectorUrl = COLLECTOR_URL();
+      const script = `<!-- GTM Tracking Pixel v3 -->
 <script>
 (function(w,d,s,u,k,wid){
-  w._gtmConfig = { apiKey: k, websiteId: wid, endpoint: '${COLLECTOR_URL}', debug: false };
+  w._gtmConfig = { apiKey: k, websiteId: wid, endpoint: '${collectorUrl}', debug: false };
   var js=d.createElement(s);
   js.async=true;
-  js.src=u+'/tracker.js';
+  js.src=u+'/tracker.v3.js';
   d.head.appendChild(js);
-})(window,document,'script','${COLLECTOR_URL}','${website.api_key}','${website.id}');
+})(window,document,'script','${collectorUrl}','${website.api_key}','${website.id}');
 </script>`;
 
       res.json({ script, website });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async eventReport(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const report = await getWebsiteEventReport(id, req.user!.userId, {
+        dateFrom: req.query.date_from as string,
+        dateTo: req.query.date_to as string,
+        period: req.query.period as string,
+        eventName: req.query.event_name as string,
+        visitorId: req.query.visitor_id as string,
+        limit: parseInt(req.query.limit as string) || 50,
+        offset: parseInt(req.query.offset as string) || 0,
+      });
+      if (!report) throw new AppError(404, 'Website not found');
+      res.json(report);
     } catch (err) {
       next(err);
     }

@@ -1,23 +1,19 @@
-# Optional — only needed if you don't have PostgreSQL + Redis installed locally.
+# Optional — only needed if you don't have MongoDB + Redis installed locally.
 # If you have both running natively, ignore this file and use backend/.env directly.
 #
 # Quick start with Docker:
-#   docker compose up -d postgres redis
-#   cd backend && npm install && npm run migrate && npm run dev
+#   docker compose up -d mongo redis
+#   cd backend && npm install && npm run dev
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: gtmtracking
-      POSTGRES_USER: gtmtracking
-      POSTGRES_PASSWORD: gtmtracking_secret
+  mongo:
+    image: mongo:7
     ports:
-      - "5432:5432"
+      - "27017:27017"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mongo_data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gtmtracking"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -33,4 +29,4 @@ services:
       retries: 5
 
 volumes:
-  postgres_data:
+  mongo_data:

@@ -1,4 +1,5 @@
-import { query } from '../index';
+import mongoose, { Schema } from 'mongoose';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface UserRow {
   id: string;
@@ -16,69 +17,76 @@ export interface UserRow {
   timezone: string;
   locale: string;
   notification_settings: Record<string, unknown>;
-  plan: string;
-  stripe_customer_id: string | null;
-  subscription_status: string | null;
-  trial_ends_at: Date | null;
-  events_this_month: number;
-  events_limit: number;
   password_changed_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  last_active_at: Date | null;
+}
+
+export interface UserDocument extends Omit<UserRow, 'id'> {
+  _id: string;
+}
+
+const UserSchema = new Schema<UserDocument>(
+  {
+    _id: { type: String, default: () => uuidv4() },
+    name: { type: String, required: true, trim: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    password: { type: String, required: true, select: false },
+    role: { type: String, default: 'customer' },
+    company: { type: String, default: null },
+    phone: { type: String, default: null },
+    avatar: { type: String, default: null },
+    email_verified: { type: Boolean, default: false },
+    email_verified_at: { type: Date, default: null },
+    last_login_at: { type: Date, default: null },
+    status: { type: String, default: 'active' },
+    timezone: { type: String, default: 'UTC' },
+    locale: { type: String, default: 'en' },
+    notification_settings: { type: Schema.Types.Mixed, default: {} },
+    password_changed_at: { type: Date, default: null },
+    last_active_at: { type: Date, default: null },
+  },
+  { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }, versionKey: false }
+);
+
+export const User = mongoose.models.User || mongoose.model<UserDocument>('User', UserSchema);
+
+function mapUser(doc: any) {
+  const obj = doc.toObject ? doc.toObject() : doc;
+  return { ...obj, id: obj._id as string };
 }
 
 export async function getUserByEmail(email: string) {
-  const result = await query('SELECT * FROM users WHERE email = $1', [email]);
-  return result.rows[0] || null;
+  const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+  return user ? mapUser(user) : null;
 }
 
 export async function getUserById(id: string) {
-  const result = await query(
-    `SELECT id, name, email, role, company, phone, avatar, email_verified, status, timezone, locale,
-            plan, events_this_month, events_limit, last_login_at, created_at
-     FROM users WHERE id = $1`,
-    [id]
-  );
-  return result.rows[0] || null;
+  const user = await User.findById(id).select('-password');
+  return user ? mapUser(user) : null;
 }
 
 export async function createUser(user: {
-  id: string;
+  id?: string;
   name: string;
   email: string;
   password: string;
   role: string;
 }) {
-  const result = await query(
-    `INSERT INTO users (id, name, email, password, role, timezone, locale)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, name, email, role, created_at`,
-    [user.id, user.name, user.email, user.password, user.role, 'UTC', 'en']
-  );
-  return result.rows[0];
-}
-
-export async function updateUser(id: string, updates: Partial<UserRow>) {
-  const keys = Object.keys(updates).filter(k => k !== 'id' && k !== 'created_at' && k !== 'password');
-  if (keys.length === 0) return null;
-  const setClause = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
-  const values = keys.map(k => {
-    const val = (updates as Record<string, unknown>)[k];
-    if (typeof val === 'object' && val !== null && !Array.isArray(val)) return JSON.stringify(val);
-    return val;
+  const doc = await User.create({
+    _id: user.id || uuidv4(),
+    name: user.name,
+    email: user.email,
+    password: user.password,
+    role: user.role,
+    timezone: 'UTC',
+    locale: 'en',
   });
-  const result = await query(
-    `UPDATE users SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
-    [id, ...values]
-  );
-  return result.rows[0] || null;
+  const obj = doc.toObject();
+  return { id: obj._id as string, name: obj.name, email: obj.email, role: obj.role, created_at: obj.created_at };
 }
 
 export async function updateLastLogin(id: string) {
-  await query(
-    `UPDATE users SET last_login_at = NOW(), events_this_month = (
-       SELECT COUNT(*) FROM events e JOIN websites w ON w.id = e.website_id WHERE w.user_id = $1
-     ) WHERE id = $1`,
-    [id]
-  );
+  await User.updateOne({ _id: id }, { $set: { last_login_at: new Date() } });
 }

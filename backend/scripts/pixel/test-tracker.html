@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jarnay Store — Test Page</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f9f9f9; }
+    h1 { color: #333; }
+    .card { background: white; border-radius: 8px; padding: 20px; margin: 16px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .btn { display: inline-block; padding: 10px 20px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin: 4px; }
+    .btn:hover { background: #0052a3; }
+    .btn-success { background: #28a745; }
+    .btn-danger { background: #dc3545; }
+    .btn-warning { background: #ffc107; color: #333; }
+    pre { background: #f0f0f0; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+    .log { max-height: 400px; overflow-y: auto; }
+    #status { margin: 10px 0; padding: 8px; border-radius: 4px; }
+    .status-ok { background: #d4edda; color: #155724; }
+    .status-err { background: #f8d7da; color: #721c24; }
+    .products { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+    .product { background: white; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; }
+    .product:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .product h3 { margin: 0 0 8px; }
+    .product .price { color: #0066cc; font-weight: bold; font-size: 18px; }
+  </style>
+</head>
+<body>
+  <h1>🛍️ Jarnay Store — Test Storefront</h1>
+
+  <div id="status">Tracker: not initialized</div>
+
+  <div class="card">
+    <h2>🔍 Page Events</h2>
+    <button class="btn" onclick="trackPageView()">📄 Track Page View</button>
+    <button class="btn btn-warning" onclick="trackScroll()">📜 Track Scroll (75%)</button>
+    <button class="btn" onclick="generateLead()">📋 Generate Lead</button>
+    <button class="btn btn-success" onclick="trackSignup()">📝 Track Sign Up</button>
+    <button class="btn" onclick="trackSearch()">🔎 Track Search</button>
+  </div>
+
+  <div class="card">
+    <h2>🛒 E-commerce Events</h2>
+    <button class="btn" onclick="simulatePurchase()">💰 Simulate Purchase</button>
+    <button class="btn btn-danger" onclick="simulateAddToCart()">➕ Add to Cart</button>
+    <button class="btn btn-warning" onclick="simulateCheckout()">🛍️ Start Checkout</button>
+    <button class="btn" onclick="simulateViewCart()">🛒 View Cart</button>
+  </div>
+
+  <div class="card">
+    <h2>📦 Products</h2>
+    <div class="products">
+      <div class="product" onclick="viewProduct('prod-001', 'Classic Leather Jacket', 299.99, 'Outerwear')">
+        <h3>Classic Leather Jacket</h3>
+        <div class="price">$299.99</div>
+        <div>Outerwear</div>
+      </div>
+      <div class="product" onclick="viewProduct('prod-002', 'Wool Cashmere Blend Coat', 459.99, 'Outerwear')">
+        <h3>Wool Cashmere Blend Coat</h3>
+        <div class="price">$459.99</div>
+        <div>Outerwear</div>
+      </div>
+      <div class="product" onclick="viewProduct('prod-003', 'Silk Evening Gown', 189.99, 'Dresses')">
+        <h3>Silk Evening Gown</h3>
+        <div class="price">$189.99</div>
+        <div>Dresses</div>
+      </div>
+      <div class="product" onclick="viewProduct('prod-004', 'Handcrafted Leather Bag', 249.99, 'Accessories')">
+        <h3>Handcrafted Leather Bag</h3>
+        <div class="price">$249.99</div>
+        <div>Accessories</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📊 Event Log</h2>
+    <pre class="log" id="log">Waiting for events...</pre>
+  </div>
+
+  <script>
+    // Set these to values from a real website. Get them by running:
+    //   node backend/scripts/seed/create-test-data.mjs
+    window._cdpConfig = {
+      apiKey: 'YOUR_API_KEY',
+      websiteId: 'YOUR_WEBSITE_ID',
+      endpoint: 'http://localhost:4000',
+      debug: true,
+    };
+  </script>
+  <script src="http://localhost:4000/tracker.js"></script>
+
+  <script>
+    var log = document.getElementById('log');
+    var status = document.getElementById('status');
+
+    function waitForTracker(cb) {
+      if (window.CDP && window.CDP.ready) { cb(); return; }
+      var check = setInterval(function () {
+        if (window.CDP && window.CDP.ready) { clearInterval(check); cb(); }
+      }, 100);
+      setTimeout(function () { clearInterval(check); status.textContent = '⚠️ Tracker timeout'; status.className = 'status-err'; }, 5000);
+    }
+
+    function logEvent(name, data) {
+      var entry = document.createElement('div');
+      entry.textContent = '[' + new Date().toLocaleTimeString() + '] ' + name + (data ? ' → ' + JSON.stringify(data) : '');
+      log.appendChild(entry);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    waitForTracker(function () {
+      status.textContent = '✅ Tracker ready — tracking enabled';
+      status.className = 'status-ok';
+      logEvent('Tracker initialized');
+    });
+
+    function trackPageView() {
+      if (window.CDP) CDP.track('PageView', { url: window.location.href + '?page=' + Date.now(), title: document.title, referrer: document.referrer });
+      logEvent('PageView tracked');
+    }
+
+    function trackScroll() {
+      if (window.CDP) CDP.track('Scroll', { percentage: 75, depth_px: 1200, max_depth: 75 });
+      logEvent('Scroll tracked');
+    }
+
+    function generateLead() {
+      if (window.CDP) CDP.lead({ form_id: 'newsletter', form_name: 'Newsletter Signup', value: 0, email: 'test@example.com', name: 'Test User' });
+      logEvent('Lead generated');
+    }
+
+    function trackSignup() {
+      if (window.CDP) CDP.signUp({ method: 'email', email: 'newuser@example.com', name: 'New User' });
+      logEvent('Signup tracked');
+    }
+
+    function trackSearch() {
+      if (window.CDP) CDP.search({ query: 'leather jacket', category: 'outerwear', results_count: 12 });
+      logEvent('Search tracked');
+    }
+
+    function viewProduct(id, name, price, category) {
+      if (window.CDP) CDP.viewProduct({ id: id, name: name, price: price, category: category, currency: 'USD' });
+      logEvent('ProductView: ' + name);
+    }
+
+    function simulateAddToCart() {
+      var items = [
+        { id: 'prod-001', name: 'Classic Leather Jacket', price: 299.99, quantity: 1 },
+        { id: 'prod-003', name: 'Silk Evening Gown', price: 189.99, quantity: 2 },
+      ];
+      items.forEach(function (item) {
+        if (window.CDP) CDP.addToCart(item);
+        logEvent('AddToCart: ' + item.name + ' x' + item.quantity);
+      });
+    }
+
+    function simulateViewCart() {
+      var items = [
+        { product_id: 'prod-001', name: 'Classic Leather Jacket', price: 299.99, quantity: 1 },
+        { product_id: 'prod-003', name: 'Silk Evening Gown', price: 189.99, quantity: 2 },
+      ];
+      var total = items.reduce(function (s, i) { return s + i.price * i.quantity; }, 0);
+      if (window.CDP) CDP.viewCart({ cart_id: 'cart-' + Date.now(), items: items, total: total, currency: 'USD', item_count: items.length });
+      logEvent('ViewCart: $' + total.toFixed(2));
+    }
+
+    function simulateCheckout() {
+      var items = [
+        { product_id: 'prod-001', name: 'Classic Leather Jacket', price: 299.99, quantity: 1 },
+        { product_id: 'prod-003', name: 'Silk Evening Gown', price: 189.99, quantity: 2 },
+      ];
+      var total = items.reduce(function (s, i) { return s + i.price * i.quantity; }, 0);
+      if (window.CDP) CDP.checkoutStarted({
+        order_id: 'ORD-' + Date.now(), cart_id: 'cart-' + Date.now(),
+        items: items, total: total, currency: 'USD',
+        shipping: 12.99, tax: total * 0.08, coupon: 'WELCOME10', payment_method: 'credit_card', item_count: items.length,
+      });
+      logEvent('CheckoutStarted: $' + total.toFixed(2));
+    }
+
+    function simulatePurchase() {
+      var items = [
+        { product_id: 'prod-001', name: 'Classic Leather Jacket', price: 299.99, quantity: 1, category: 'Outerwear' },
+        { product_id: 'prod-004', name: 'Handcrafted Leather Bag', price: 249.99, quantity: 1, category: 'Accessories' },
+      ];
+      var total = items.reduce(function (s, i) { return s + i.price * i.quantity; }, 0);
+      if (window.CDP) CDP.purchase({
+        order_id: 'ORD-' + Date.now(), transaction_id: 'TXN-' + Date.now(),
+        items: items, total: total, currency: 'USD',
+        shipping: 12.99, tax: parseFloat((total * 0.08).toFixed(2)),
+        coupon: 'WELCOME10', payment_method: 'credit_card', item_count: items.length,
+        billing_city: 'New York', billing_country: 'US',
+      });
+      logEvent('Purchase: $' + total.toFixed(2));
+    }
+
+    function identifyUser() {
+      if (window.CDP) CDP.identify({ userId: 'visitor-' + Date.now(), email: 'test@jarnay-store.com', name: 'Test Customer' });
+      logEvent('User identified');
+    }
+  </script>
+</body>
+</html>
