@@ -1,6 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 
 export interface VisitorProfileRow {
+  workspace_id: string | null;
   visitor_id: string;
   email: string | null;
   phone: string | null;
@@ -28,6 +29,7 @@ export interface VisitorProfileDocument extends VisitorProfileRow {
 const VisitorProfileSchema = new Schema<VisitorProfileDocument>(
   {
     _id: { type: String, required: true },
+    workspace_id: { type: String, default: null, index: true },
     email: { type: String, default: null, index: true },
     phone: { type: String, default: null },
     first_name: { type: String, default: null },

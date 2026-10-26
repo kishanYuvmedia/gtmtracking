@@ -5,9 +5,16 @@ import { Event } from './Event';
 export interface WebsiteRow {
   id: string;
   user_id: string;
+  workspace_id: string | null;
+  source_id: string | null;
   domain: string;
   api_key: string;
   name: string | null;
+  website_type: string | null;
+  // ISO country of the shop; currency defaults from it (snippet `currency`).
+  country: string | null;
+  currency: string | null;
+  disconnected_at: Date | null;
   description: string | null;
   status: string;
   timezone: string;
@@ -24,8 +31,14 @@ const WebsiteSchema = new Schema<WebsiteDocument>(
   {
     _id: { type: String, default: () => uuidv4() },
     user_id: { type: String, required: true, index: true },
+    workspace_id: { type: String, default: null, index: true },
+    source_id: { type: String, default: null, index: true },
     domain: { type: String, required: true, trim: true },
     name: { type: String, default: null },
+    website_type: { type: String, default: null },
+    country: { type: String, default: null, uppercase: true, minlength: 2, maxlength: 2 },
+    currency: { type: String, default: null, uppercase: true, minlength: 3, maxlength: 3 },
+    disconnected_at: { type: Date, default: null },
     api_key: { type: String, required: true, unique: true },
     description: { type: String, default: null },
     status: { type: String, default: 'active' },
@@ -47,14 +60,21 @@ export async function getWebsiteByApiKey(apiKey: string) {
   return website ? mapWebsite(website) : null;
 }
 
+/** active: an event in the last 24h; idle: seen before but not recently; not_installed: never. */
+export function pixelStatus(lastEventAt: Date | null): 'active' | 'idle' | 'not_installed' {
+  if (!lastEventAt) return 'not_installed';
+  return Date.now() - new Date(lastEventAt).getTime() < 24 * 60 * 60 * 1000 ? 'active' : 'idle';
+}
+
 export async function getWebsitesByUserId(userId: string) {
-  const websites = await Website.find({ user_id: userId }).sort({ created_at: -1 });
+  // Disconnected sites are hidden from the Sites list / website picker (their events stay).
+  const websites = await Website.find({ user_id: userId, status: { $ne: 'disconnected' } }).sort({ created_at: -1 });
   const websiteIds = websites.map(w => w._id);
 
   const [eventCounts, events24h, visitorCounts] = await Promise.all([
     Event.aggregate([
       { $match: { website_id: { $in: websiteIds } } },
-      { $group: { _id: '$website_id', count: { $sum: 1 } } },
+      { $group: { _id: '$website_id', count: { $sum: 1 }, last_event_at: { $max: '$created_at' } } },
     ]),
     Event.aggregate([
       {
@@ -72,6 +92,7 @@ export async function getWebsitesByUserId(userId: string) {
   ]);
 
   const countMap = new Map(eventCounts.map(r => [r._id, r.count]));
+  const lastEventMap = new Map<string, Date>(eventCounts.map(r => [r._id, r.last_event_at]));
   const count24hMap = new Map(events24h.map(r => [r._id, r.count]));
   const visitorMap = new Map(visitorCounts.map(r => [r._id, r.visitors.length]));
 
@@ -81,6 +102,8 @@ export async function getWebsitesByUserId(userId: string) {
       ...obj,
       event_count: countMap.get(w._id) || 0,
       events_24h: count24hMap.get(w._id) || 0,
+      last_event_at: lastEventMap.get(w._id) || null,
+      pixel_status: pixelStatus(lastEventMap.get(w._id) || null),
       visitor_count: visitorMap.get(w._id) || 0,
     };
   });
@@ -160,8 +183,13 @@ export async function getWebsiteEventNames(websiteId: string, userId: string) {
 export async function createWebsite(website: {
   id?: string;
   user_id: string;
+  workspace_id?: string | null;
+  source_id?: string | null;
   domain: string;
   name?: string | null;
+  website_type?: string | null;
+  country?: string | null;
+  currency?: string | null;
   api_key: string;
   status?: string;
   timezone?: string;
@@ -171,8 +199,13 @@ export async function createWebsite(website: {
   const doc = await Website.create({
     _id: website.id || uuidv4(),
     user_id: website.user_id,
+    workspace_id: website.workspace_id || null,
+    source_id: website.source_id || null,
     domain: website.domain,
     name: website.name || website.domain,
+    website_type: website.website_type || null,
+    country: website.country || null,
+    currency: website.currency || null,
     api_key: website.api_key,
     status: website.status || 'active',
     timezone: website.timezone || 'UTC',
@@ -282,24 +315,31 @@ export async function getWebsiteEventReport(websiteId: string, userId: string, f
     .skip(offset)
     .limit(limit);
 
-  // Browser/OS aggregation from device_info
+  // Browser/OS/Device aggregation from device_info
+  // Group directly on nested fields; $toLower normalizes casing to prevent duplicates
   const browserAgg = Event.aggregate([
-    { $match: match },
-    { $group: { _id: '$device_info.browser', count: { $sum: 1 } } },
+    { $match: { ...match, 'device_info': { $ne: null } } },
+    { $project: { _name: { $toLower: '$device_info.browser.name' } } },
+    { $match: { _name: { $ne: null } } },
+    { $group: { _id: '$_name', count: { $sum: 1 } } },
     { $sort: { count: -1 } },
     { $limit: 10 },
   ]);
 
   const osAgg = Event.aggregate([
-    { $match: match },
-    { $group: { _id: '$device_info.os', count: { $sum: 1 } } },
+    { $match: { ...match, 'device_info': { $ne: null } } },
+    { $project: { _name: { $toLower: '$device_info.os_name' } } },
+    { $match: { _name: { $ne: null } } },
+    { $group: { _id: '$_name', count: { $sum: 1 } } },
     { $sort: { count: -1 } },
     { $limit: 10 },
   ]);
 
   const deviceTypeAgg = Event.aggregate([
-    { $match: match },
-    { $group: { _id: '$device_info.deviceType', count: { $sum: 1 } } },
+    { $match: { ...match, 'device_info': { $ne: null } } },
+    { $project: { _name: { $toLower: '$device_info.device_type' } } },
+    { $match: { _name: { $ne: null } } },
+    { $group: { _id: '$_name', count: { $sum: 1 } } },
     { $sort: { count: -1 } },
   ]);
 
@@ -324,9 +364,21 @@ export async function getWebsiteEventReport(websiteId: string, userId: string, f
     },
     timeline: eventsByDay.map((e: any) => ({ date: e._id, count: e.count })),
     visitors: {
-      browsers: browsers.map((b: any) => ({ name: b._id || 'Unknown', count: b.count })),
-      os: osList.map((o: any) => ({ name: o._id || 'Unknown', count: o.count })),
-      device_types: deviceTypes.map((d: any) => ({ name: d._id || 'Unknown', count: d.count })),
+      browsers: browsers.map((b: any) => {
+        const raw = typeof b._id === 'object' ? (b._id?.name || 'Unknown') : (b._id || 'Unknown');
+        const name = typeof raw === 'string' ? raw.charAt(0).toUpperCase() + raw.slice(1) : 'Unknown';
+        return { name, count: b.count };
+      }),
+      os: osList.map((o: any) => {
+        const raw = typeof o._id === 'object' ? (o._id?.name || 'Unknown') : (o._id || 'Unknown');
+        const name = typeof raw === 'string' ? raw.charAt(0).toUpperCase() + raw.slice(1) : 'Unknown';
+        return { name, count: o.count };
+      }),
+      device_types: deviceTypes.map((d: any) => {
+        const raw = typeof d._id === 'object' ? (d._id?.name || 'Unknown') : (d._id || 'Unknown');
+        const name = typeof raw === 'string' ? raw.charAt(0).toUpperCase() + raw.slice(1) : 'Unknown';
+        return { name, count: d.count };
+      }),
     },
     events: events.map((e: any) => {
       const obj = e.toObject();

@@ -14,7 +14,7 @@ export const identifyController = {
           city: req.geoLocation?.city || undefined,
         },
       };
-      const result = await identifyService.identifyVisitor(body);
+      const result = await identifyService.identifyVisitor(body, req.website!.workspaceId);
       res.json({ success: true, visitor_id: result.visitor_id });
     } catch (err) {
       next(err);

@@ -29,9 +29,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: https://api.clickssprinter.com/api
-    env_file:
-      - ./frontend/.env.production
+        # Vite inlines this at build time (frontend/src/lib/api.ts reads VITE_API_URL).
+        VITE_API_URL: https://api.clickssprinter.com/api
     restart: unless-stopped
 
   certbot:

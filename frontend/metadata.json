@@ -1,0 +1,6 @@
+{
+  "name": "ClickOwl UI",
+  "description": "Responsive homepage and screen UI design for ClickOwl with navigation bar, based on brand logo and mockups.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

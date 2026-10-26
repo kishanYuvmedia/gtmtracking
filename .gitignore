@@ -10,3 +10,7 @@ coverage/
 backend/local
 tsconfig.tsbuildinfo
 *.tsbuildinfo
+
+# Stray local env file (contains credentials)
+backend/local
+frontend/Archive.zip

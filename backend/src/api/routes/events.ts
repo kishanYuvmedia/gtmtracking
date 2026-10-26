@@ -7,3 +7,4 @@ export const eventRoutes = Router();
 eventRoutes.use(authenticate);
 eventRoutes.get('/', eventController.list);
 eventRoutes.get('/stats', eventController.stats);
+eventRoutes.get('/overview', eventController.overview);

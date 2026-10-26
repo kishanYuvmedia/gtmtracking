@@ -20,8 +20,16 @@ export const collectController = {
           timezone: req.geoLocation?.timezone || null,
         },
       };
-      const event = await eventService.processEvent(body, req.clientIp, req.geoLocation);
-      res.status(201).json({ success: true, event_id: event.event_id });
+      const event = await eventService.processEvent(body, req.clientIp, req.geoLocation, {
+        workspaceId: req.website!.workspaceId,
+        sourceId: req.website!.sourceId,
+        sourceType: req.website!.sourceType,
+      });
+      if (!event) {
+        res.status(200).json({ success: true, skipped: true });
+        return;
+      }
+      res.status(200).json({ success: true, event_id: event.event_id });
     } catch (err) {
       next(err);
     }

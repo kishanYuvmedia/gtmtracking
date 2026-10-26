@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { eventService } from '../services/eventService';
 import type { CollectRequestBody } from '../types/dataModels';
+import { AppError } from '../middleware/errorHandler';
 
 const locationEnrichment = (req: Request) => ({
   ip_address: req.clientIp || null,
@@ -29,13 +30,28 @@ export const batchController = {
               },
             },
             req.clientIp,
-            req.geoLocation
+            req.geoLocation,
+            {
+              workspaceId: req.website!.workspaceId,
+              sourceId: req.website!.sourceId,
+              sourceType: req.website!.sourceType,
+            }
           )
         )
       );
-      const succeeded = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
-      res.status(207).json({ success: true, succeeded, failed });
+      const outcomes = results.map((result: PromiseSettledResult<unknown>, index: number) => {
+        if (result.status === 'fulfilled') {
+          return { index, success: true };
+        }
+        return {
+          index,
+          success: false,
+          error: result.reason instanceof AppError ? result.reason.message : 'Event processing failed',
+        };
+      });
+      const succeeded = outcomes.filter(outcome => outcome.success).length;
+      const failed = outcomes.length - succeeded;
+      res.status(207).json({ success: failed === 0, succeeded, failed, results: outcomes });
     } catch (err) {
       next(err);
     }

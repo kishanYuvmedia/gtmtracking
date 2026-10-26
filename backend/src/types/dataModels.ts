@@ -73,6 +73,10 @@ export interface Identifiers {
   event_id?: string;
   session_id?: string;
   visitor_id?: string;
+  anonymous_id?: string;
+  user_id?: string;
+  email?: string;
+  phone?: string;
   website?: string;
   time?: string;
   sdk_version?: string;
@@ -128,6 +132,9 @@ export interface ConsentData {
 export interface CollectRequestBody {
   event_name?: string;
   website_id?: string;
+  user_id?: string;
+  email?: string;
+  phone?: string;
   session_id?: string;
   visitor_id?: string;
   event_id?: string;
@@ -150,6 +157,7 @@ export interface CollectRequestBody {
   // V3 fields pass through
   identifiers?: Identifiers;
   attribution?: AttributionData;
+  url_params?: Record<string, string>;
   engagement?: EngagementData;
   consent?: ConsentData;
   session?: SessionSectionData;
@@ -158,6 +166,9 @@ export interface CollectRequestBody {
 
 export interface IdentifyRequestBody {
   visitor_id: string;
+  website_id?: string;
+  user_id?: string;
+  name?: string;
   email?: string;
   phone?: string;
   first_name?: string;

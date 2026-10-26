@@ -39,8 +39,13 @@ if [ ! -f "backend/.env.production" ]; then
   cat > backend/.env.production << 'EOF'
 NODE_ENV=production
 PORT=4000
-DATABASE_URL=postgresql://postgres:ondsQSY9R16vB9CE@db.ahqzydkettabnaetznum.supabase.co:5432/postgres
+MONGODB_URI=mongodb+srv://USER:PASSWORD@CLUSTER.mongodb.net/trackingdb?retryWrites=true&w=majority
 JWT_SECRET=CHANGE_THIS_TO_A_RANDOM_SECRET_64_CHARS
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
 REDIS_URL=redis://localhost:6379
 META_APP_ID=
 META_APP_SECRET=
@@ -48,7 +53,7 @@ META_PIXEL_ID=
 META_ACCESS_TOKEN=
 META_WEBHOOK_VERIFY_TOKEN=
 CDN_URL=https://clickssprinter.com
-COLLECTOR_URL=https://clickssprinter.com
+COLLECTOR_URL=https://api.clickssprinter.com
 APP_URL=https://clickssprinter.com
 EOF
   echo "IMPORTANT: Edit backend/.env.production and set a strong JWT_SECRET"
@@ -72,6 +77,13 @@ docker compose -f docker-compose.prod.yml build
 
 echo "[8/8] Starting services..."
 docker compose -f docker-compose.prod.yml up -d
+
+echo ""
+echo "=== Database migration (required once for the CDP release) ==="
+echo "Dry run first (checks the storage quota, changes nothing):"
+echo "  docker compose -f docker-compose.prod.yml exec -e CDP_PROD_MIGRATION_CONFIRM=YES_MIGRATE_PRODUCTION -e CDP_MIGRATION_DRY_RUN=1 backend node dist/migrations/production.js"
+echo "Then for real:"
+echo "  docker compose -f docker-compose.prod.yml exec -e CDP_PROD_MIGRATION_CONFIRM=YES_MIGRATE_PRODUCTION backend node dist/migrations/production.js"
 
 echo ""
 echo "=== Deployment Complete ==="

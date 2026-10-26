@@ -128,6 +128,8 @@
       page_title: document.title,
       page_path: window.location.pathname,
       page_url: window.location.href,
+      search: window.location.search || '',
+      hash: window.location.hash || '',
       landing_page: sdk.landingPage,
       referrer: document.referrer || '',
       page_load_time_ms: sdk.pageLoadStart ? nowMs() - sdk.pageLoadStart : 0,
@@ -147,12 +149,33 @@
       utm_term: params.get('utm_term') || '',
       utm_content: params.get('utm_content') || '',
       gclid: params.get('gclid') || '',
+      gbraid: params.get('gbraid') || '',
+      wbraid: params.get('wbraid') || '',
       fbclid: params.get('fbclid') || '',
       msclkid: params.get('msclkid') || '',
       ttclid: params.get('ttclid') || '',
+      twclid: params.get('twclid') || '',
+      dclid: params.get('dclid') || '',
+      li_fat_id: params.get('li_fat_id') || '',
+      igshid: params.get('igshid') || '',
+      mc_cid: params.get('mc_cid') || '',
+      mc_eid: params.get('mc_eid') || '',
+      utm_id: params.get('utm_id') || '',
+      utm_source_platform: params.get('utm_source_platform') || '',
+      utm_creative_format: params.get('utm_creative_format') || '',
+      utm_term: params.get('utm_term') || '',
       affiliate_id: params.get('affiliate_id') || params.get('ref') || '',
       campaign_id: params.get('campaign_id') || params.get('cid') || '',
     };
+  }
+
+  function collectAllUrlParams() {
+    var params = new URLSearchParams(window.location.search);
+    var result = {};
+    params.forEach(function (value, key) {
+      result[key] = value;
+    });
+    return result;
   }
 
   function collectDevice() {
@@ -267,6 +290,12 @@
       trackEngagement: true,
       consentRequired: false,
       respectDoNotTrack: false,
+      // Set from the dashboard snippet: E-Commerce websites auto-capture shop events.
+      ecommerce: false,
+      websiteType: '',
+      // Shop country and its currency, set per website in the dashboard.
+      country: '',
+      currency: 'INR',
     },
 
     // State
@@ -307,13 +336,17 @@
         if (key in this.config) this.config[key] = options[key];
       }
 
-      this.sessionId = this.getCookie('visitor_id') ? null : uuid();
-      this.sessionId = this.getCookie('session_id') || uuid();
+      this.loadConsent();
       this.visitorId = this.getCookie('visitor_id') || uuid();
-      this.isNewSession = !this.getCookie('session_id');
-
-      this.setCookie('session_id', this.sessionId, 30);
       this.setCookie('visitor_id', this.visitorId, 365);
+      // Sessions end after 30 minutes of inactivity: the cookie expiry rolls forward on every event.
+      this.sessionId = this.getCookie('session_id');
+      this.isNewSession = !this.sessionId;
+      if (!this.sessionId) this.sessionId = uuid();
+      this.touchSession();
+      this.updateVisit();
+      this.updateTouches();
+      this.updateAdCookies();
 
       var pg = this.getSessionStorage('page_number');
       this.pageNumber = pg ? parseInt(pg, 10) + 1 : 1;
@@ -324,7 +357,7 @@
       this.entryPage = this.landingPage;
 
       this.pageLoadStart = nowMs();
-      this.sessionStart = this.pageLoadStart;
+      this.sessionStart = this.sessionStart || this.pageLoadStart;
       this._lastActiveTime = this.pageLoadStart;
 
       this.loadConsent();
@@ -351,6 +384,7 @@
       if (this.config.trackVideos) this.attachVideoListeners();
 
       this.track('PageView', {});
+      this.attachEcommerce();
 
       if (this.config.trackEngagement) {
         this.track('SessionStart', {});
@@ -427,11 +461,13 @@
 
       this.eventCount++;
       this.clickCount++;
+      this.touchSession();
 
       var event = {
         identifiers: collectIdentifiers(this),
         page: collectPage(this),
         attribution: collectAttribution(),
+        url_params: collectAllUrlParams(),
         event: {
           type: type,
           properties: properties || {},
@@ -443,6 +479,7 @@
         consent: collectConsent(this),
         performance: this._perfMetrics || {},
         session: collectSession(this),
+        context: this.collectContext(),
         custom: custom || this.customDimensions || {},
       };
 
@@ -457,61 +494,409 @@
     // ── E-Commerce ──
 
     viewProduct: function (data) {
-      this.track('ViewProduct', {
-        product_id: data.id || data.product_id || '',
-        sku: data.sku || '',
-        name: data.name || '',
-        category: data.category || '',
-        brand: data.brand || '',
-        price: data.price || 0,
-        currency: data.currency || 'INR',
-        url: data.url || window.location.href,
-        image_url: data.image_url || '',
-        variant: data.variant || '',
-      });
+      this.ecomEmit('ViewContent', this.ecomProps([data], data), 'manual');
     },
 
     addToCart: function (data) {
-      this.track('AddToCart', {
-        cart_id: data.cart_id || '',
-        product_id: data.id || data.product_id || '',
-        name: data.name || '',
-        quantity: data.quantity || 1,
-        price: data.price || 0,
-        currency: data.currency || 'INR',
-      });
+      this.ecomEmit('AddToCart', this.ecomProps([data], { currency: data.currency }), 'manual');
     },
 
     removeFromCart: function (data) {
-      this.track('RemoveFromCart', {
-        cart_id: data.cart_id || '',
-        product_id: data.id || data.product_id || '',
-        name: data.name || '',
-        quantity: data.quantity || 1,
-        price: data.price || 0,
-      });
+      this.ecomEmit('RemoveFromCart', this.ecomProps([data], { currency: data.currency }), 'manual');
     },
 
     beginCheckout: function (data) {
-      this.track('BeginCheckout', {
-        step: data.step || 1,
-        items: data.items || [],
-        coupon: data.coupon || '',
-        total: data.total || 0,
-        currency: data.currency || 'INR',
-      });
+      this.ecomEmit('InitiateCheckout', this.ecomProps(data.items || [], { value: data.total, currency: data.currency, coupon: data.coupon }), 'manual');
     },
 
     purchase: function (data) {
-      this.track('Purchase', {
-        order_id: data.order_id || data.transaction_id || '',
-        revenue: data.revenue || data.total || 0,
-        tax: data.tax || 0,
-        shipping: data.shipping || 0,
-        discount: data.discount || 0,
-        currency: data.currency || 'INR',
-        products: data.products || data.items || [],
+      this.ecomEmit('Purchase', this.ecomProps(data.products || data.items || [], {
+        value: data.revenue != null ? data.revenue : data.total,
+        currency: data.currency,
+        order_id: data.order_id || data.transaction_id,
+        tax: data.tax, shipping: data.shipping, discount: data.discount, coupon: data.coupon,
+      }), 'manual');
+    },
+
+    // ── E-Commerce auto-capture ──
+    // Three layers, strongest first: dataLayer (GA4 / UA ecommerce pushes from GTM, Shopify,
+    // WooCommerce plugins), built-in Shopify + WooCommerce hooks, then generic page detection.
+    // The same event from several layers within ~2s is sent once, keeping the strongest.
+
+    _ecomSlots: {},
+
+    ecomNumber: function (value) {
+      if (typeof value === 'number') return isFinite(value) ? value : 0;
+      if (typeof value !== 'string') return 0;
+      var n = parseFloat(value.replace(/[^0-9.\-]/g, ''));
+      return isFinite(n) ? n : 0;
+    },
+
+    ecomProps: function (items, extra) {
+      var self = this;
+      extra = extra || {};
+      var contents = (Array.isArray(items) ? items : []).filter(Boolean).map(function (it) {
+        return {
+          id: String(it.item_id || it.id || it.product_id || it.sku || it.variant_id || ''),
+          name: String(it.item_name || it.name || it.title || ''),
+          price: self.ecomNumber(it.price),
+          quantity: self.ecomNumber(it.quantity) || 1,
+          category: String(it.item_category || it.category || ''),
+          brand: String(it.item_brand || it.brand || ''),
+          variant: String(it.item_variant || it.variant || ''),
+        };
       });
+      var computed = contents.reduce(function (sum, c) { return sum + c.price * c.quantity; }, 0);
+      var props = {
+        value: extra.value != null && extra.value !== '' ? this.ecomNumber(extra.value) : Math.round(computed * 100) / 100,
+        currency: String(extra.currency || this.config.currency || 'INR').toUpperCase(),
+        content_type: 'product',
+        content_ids: contents.map(function (c) { return c.id; }).filter(Boolean),
+        contents: contents,
+        num_items: contents.reduce(function (sum, c) { return sum + c.quantity; }, 0),
+      };
+      if (contents[0]) {
+        props.product_id = contents[0].id;
+        props.product_name = contents[0].name;
+      }
+      ['order_id', 'coupon', 'tax', 'shipping', 'discount', 'search_term'].forEach(function (key) {
+        if (extra[key] != null && extra[key] !== '') props[key] = extra[key];
+      });
+      return props;
+    },
+
+    ecomEmit: function (name, props, source) {
+      var priority = { dom: 1, shopify: 2, woocommerce: 2, datalayer: 3, manual: 4 }[source] || 1;
+      if (name === 'Purchase' && props.order_id && this.getLocalStorage('order_' + props.order_id)) return;
+      var t = nowMs();
+      var slot = this._ecomSlots[name];
+      if (slot && t - slot.at < 2000) {
+        if (slot.priority >= priority) return;
+        if (!slot.timer) return; // weaker copy already sent
+        clearTimeout(slot.timer);
+      }
+      var self = this;
+      props.capture_source = source;
+      if (this._platform) props.store_platform = this._platform;
+      var send = function () {
+        slot.timer = null;
+        if (name === 'Purchase' && props.order_id) self.setLocalStorage('order_' + props.order_id, String(nowMs()));
+        self.track(name, props);
+      };
+      slot = this._ecomSlots[name] = { at: t, priority: priority, timer: null };
+      // Platform/DOM guesses wait briefly so a precise dataLayer push can replace them.
+      if (priority < 3) slot.timer = setTimeout(send, 700);
+      else send();
+    },
+
+    attachEcommerce: function () {
+      try { this.attachDataLayer(); } catch (e) {}
+      if (!this.config.ecommerce) return;
+      try {
+        if (!this.attachShopify()) this.attachWooCommerce();
+      } catch (e) {}
+      try { this.attachDomCommerce(); } catch (e) {}
+    },
+
+    attachDataLayer: function () {
+      var self = this;
+      var dl = window.dataLayer = window.dataLayer || [];
+      var seen = 0;
+      var scan = function () {
+        for (; seen < dl.length; seen++) {
+          try { self.handleDataLayer(dl[seen]); } catch (e) {}
+        }
+      };
+      scan();
+      var original = dl.push;
+      dl.push = function () {
+        var result = original.apply(dl, arguments);
+        scan();
+        return result;
+      };
+      // GTM may replace push after we load; a light poll catches anything we missed.
+      setInterval(scan, 1000);
+    },
+
+    handleDataLayer: function (entry) {
+      if (!entry || typeof entry !== 'object') return;
+      var name, data;
+      if (typeof entry.length === 'number' && entry[0] === 'event') {
+        // gtag('event', 'add_to_cart', {...}) pushes an arguments object.
+        name = entry[1];
+        data = entry[2] || {};
+      } else if (entry.event) {
+        name = entry.event;
+        data = entry.ecommerce || entry;
+      } else if (entry.ecommerce) {
+        data = entry.ecommerce;
+      } else {
+        return;
+      }
+      var GA4 = {
+        view_item: 'ViewContent', view_item_list: 'ViewCategory', add_to_cart: 'AddToCart',
+        remove_from_cart: 'RemoveFromCart', view_cart: 'ViewCart', begin_checkout: 'InitiateCheckout',
+        add_shipping_info: 'AddShippingInfo', add_payment_info: 'AddPaymentInfo', purchase: 'Purchase',
+        refund: 'Refund', add_to_wishlist: 'AddToWishlist', search: 'Search', generate_lead: 'Lead',
+        sign_up: 'SignUp', login: 'Login',
+      };
+      var mapped = GA4[name];
+      if (mapped) {
+        if (!this.config.ecommerce && ['Lead', 'SignUp', 'Login', 'Search'].indexOf(mapped) === -1) return;
+        var items = data.items || (data.ecommerce && data.ecommerce.items) || [];
+        this.ecomEmit(mapped, this.ecomProps(items, {
+          value: data.value, currency: data.currency, order_id: data.transaction_id,
+          coupon: data.coupon, tax: data.tax, shipping: data.shipping, search_term: data.search_term,
+        }), 'datalayer');
+        return;
+      }
+      if (!this.config.ecommerce || !data) return;
+      // Universal Analytics enhanced ecommerce.
+      var ua = [['detail', 'ViewContent'], ['add', 'AddToCart'], ['remove', 'RemoveFromCart'], ['checkout', 'InitiateCheckout'], ['purchase', 'Purchase']];
+      for (var i = 0; i < ua.length; i++) {
+        var block = data[ua[i][0]];
+        if (!block) continue;
+        var action = block.actionField || {};
+        this.ecomEmit(ua[i][1], this.ecomProps(block.products || [], {
+          value: action.revenue, currency: data.currencyCode, order_id: action.id, coupon: action.coupon,
+          tax: action.tax, shipping: action.shipping,
+        }), 'datalayer');
+        return;
+      }
+    },
+
+    // Calls back with (url, body) for every fetch / XHR the page makes.
+    interceptRequests: function (callback) {
+      var notify = function (url, body) { try { callback(String(url || ''), body); } catch (e) {} };
+      if (window.fetch) {
+        var originalFetch = window.fetch;
+        window.fetch = function (input, init) {
+          notify(typeof input === 'string' ? input : input && input.url, init && init.body);
+          return originalFetch.apply(this, arguments);
+        };
+      }
+      if (window.XMLHttpRequest) {
+        var open = XMLHttpRequest.prototype.open;
+        var sendXhr = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function (method, url) {
+          this._cdpUrl = url;
+          return open.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.send = function (body) {
+          notify(this._cdpUrl, body);
+          return sendXhr.apply(this, arguments);
+        };
+      }
+    },
+
+    readRequestBody: function (body) {
+      if (!body) return {};
+      if (typeof body === 'string') {
+        try { return JSON.parse(body); } catch (e) {}
+        var out = {};
+        new URLSearchParams(body).forEach(function (v, k) { out[k] = v; });
+        return out;
+      }
+      if (typeof FormData !== 'undefined' && body instanceof FormData) {
+        var data = {};
+        body.forEach(function (v, k) { data[k] = v; });
+        return data;
+      }
+      return {};
+    },
+
+    attachShopify: function () {
+      var shopify = window.Shopify;
+      var analytics = window.ShopifyAnalytics;
+      if (!shopify && !analytics) return false;
+      this._platform = 'shopify';
+      var self = this;
+      var meta = (analytics && analytics.meta) || window.meta || {};
+      var currency = (shopify && shopify.currency && shopify.currency.active) || this.config.currency;
+      var pageType = meta.page && meta.page.pageType;
+      var product = meta.product;
+      var variantItem = function (variantId) {
+        var variants = (product && product.variants) || [];
+        var variant = variants.filter(function (v) { return String(v.id) === String(variantId); })[0] || variants[0];
+        if (!variant) return null;
+        return { id: product.id, variant_id: variant.id, name: variant.name || product.title || '', price: (variant.price || 0) / 100, variant: variant.public_title || '' };
+      };
+
+      if (pageType === 'product' && product) {
+        var item = variantItem(null);
+        if (item) this.ecomEmit('ViewContent', this.ecomProps([item], { currency: currency }), 'shopify');
+      } else if (pageType === 'collection') {
+        this.ecomEmit('ViewCategory', this.ecomProps([], { currency: currency, value: 0 }), 'shopify');
+      }
+
+      this.interceptRequests(function (url, body) {
+        if (!/\/cart\/add(\.js)?(\?|$)/.test(url)) return;
+        var data = self.readRequestBody(body);
+        var lines = data.items || [{ id: data.id, quantity: data.quantity }];
+        var items = lines.map(function (line) {
+          var it = variantItem(line.id) || { id: line.id, name: '', price: 0 };
+          it.quantity = parseInt(line.quantity, 10) || 1;
+          return it;
+        });
+        self.ecomEmit('AddToCart', self.ecomProps(items, { currency: currency }), 'shopify');
+      });
+      document.addEventListener('submit', function (e) {
+        var form = e.target;
+        if (!form || !form.getAttribute) return;
+        var action = form.getAttribute('action') || '';
+        if (/\/cart\/add/.test(action)) {
+          var idField = form.querySelector('[name="id"]');
+          var qtyField = form.querySelector('[name="quantity"]');
+          var it = variantItem(idField && idField.value) || { id: idField && idField.value, price: 0 };
+          it.quantity = parseInt(qtyField && qtyField.value, 10) || 1;
+          self.ecomEmit('AddToCart', self.ecomProps([it], { currency: currency }), 'shopify');
+        } else if (/\/cart$/.test(action) && e.submitter && e.submitter.name === 'checkout') {
+          self.ecomEmit('InitiateCheckout', self.ecomProps([], { currency: currency, value: 0 }), 'shopify');
+        }
+      }, true);
+
+      // Classic checkout (thank-you page "additional scripts"). Checkout Extensibility stores
+      // need the Shopify customer-events pixel to send Purchase.
+      var checkout = shopify && shopify.checkout;
+      if (checkout) {
+        var lines = (checkout.line_items || []).map(function (li) {
+          return { id: li.product_id, variant_id: li.variant_id, name: li.title, price: li.price, quantity: li.quantity, sku: li.sku };
+        });
+        var isThankYou = /thank_you|\/orders\//.test(location.pathname) || checkout.order_id;
+        this.ecomEmit(isThankYou ? 'Purchase' : 'InitiateCheckout', this.ecomProps(lines, {
+          value: checkout.total_price, currency: checkout.currency || currency, order_id: checkout.order_id,
+          tax: checkout.total_tax, shipping: checkout.shipping_rate && checkout.shipping_rate.price,
+          discount: checkout.discount && checkout.discount.amount,
+        }), 'shopify');
+      }
+      return true;
+    },
+
+    attachWooCommerce: function () {
+      var body = document.body;
+      var cls = (body && body.className) || '';
+      if (!window.wc_add_to_cart_params && !window.woocommerce_params && !/\bwoocommerce(-page)?\b/.test(cls)) return false;
+      this._platform = 'woocommerce';
+      var self = this;
+      var priceIn = function (root) {
+        var el = root && root.querySelector('.price ins .amount, .price .amount, .woocommerce-Price-amount');
+        return el ? self.ecomNumber(el.textContent) : 0;
+      };
+      var pageProduct = function () {
+        var jsonLd = self.readJsonLdProduct();
+        if (jsonLd) return jsonLd;
+        var form = document.querySelector('form.cart');
+        var idField = form && (form.querySelector('[name="add-to-cart"]') || form.querySelector('[name="product_id"]'));
+        var title = document.querySelector('.product_title, h1');
+        return {
+          id: idField ? idField.value : '',
+          name: title ? title.textContent.trim() : document.title,
+          price: priceIn(document.querySelector('.summary, .product')),
+        };
+      };
+
+      if (/\bsingle-product\b/.test(cls)) {
+        this.ecomEmit('ViewContent', this.ecomProps([pageProduct()]), 'woocommerce');
+      }
+
+      // AJAX add-to-cart buttons on shop/category pages.
+      if (window.jQuery) {
+        window.jQuery(document.body).on('added_to_cart', function (e, fragments, hash, button) {
+          var btn = button && button[0];
+          var card = btn && btn.closest ? btn.closest('.product, li') : null;
+          var titleEl = card && card.querySelector('.woocommerce-loop-product__title, h2, h3');
+          self.ecomEmit('AddToCart', self.ecomProps([{
+            id: btn ? btn.getAttribute('data-product_id') || btn.getAttribute('data-product_sku') : '',
+            name: btn && btn.getAttribute('data-product_name') || (titleEl ? titleEl.textContent.trim() : ''),
+            quantity: btn ? btn.getAttribute('data-quantity') : 1,
+            price: priceIn(card),
+          }]), 'woocommerce');
+        });
+      }
+      // Single product form (full page submit).
+      document.addEventListener('submit', function (e) {
+        var form = e.target;
+        if (!form || !form.matches || !form.matches('form.cart')) return;
+        var product = pageProduct();
+        var qty = form.querySelector('[name="quantity"]');
+        product.quantity = qty ? qty.value : 1;
+        self.ecomEmit('AddToCart', self.ecomProps([product]), 'woocommerce');
+      }, true);
+
+      if (/\bwoocommerce-order-received\b/.test(cls)) {
+        var orderMatch = location.pathname.match(/order-received\/(\d+)/);
+        var orderEl = document.querySelector('.woocommerce-order-overview__order strong, .order strong');
+        var totalEl = document.querySelector('.woocommerce-order-overview__total .amount, .order-total .amount');
+        this.ecomEmit('Purchase', this.ecomProps([], {
+          order_id: orderMatch ? orderMatch[1] : orderEl ? orderEl.textContent.trim() : '',
+          value: totalEl ? totalEl.textContent : 0,
+        }), 'woocommerce');
+      } else if (/\bwoocommerce-checkout\b/.test(cls)) {
+        var total = document.querySelector('.order-total .amount');
+        this.ecomEmit('InitiateCheckout', this.ecomProps([], { value: total ? total.textContent : 0 }), 'woocommerce');
+      } else if (/\bwoocommerce-cart\b/.test(cls)) {
+        var cartTotal = document.querySelector('.order-total .amount, .cart-subtotal .amount');
+        this.ecomEmit('ViewCart', this.ecomProps([], { value: cartTotal ? cartTotal.textContent : 0 }), 'woocommerce');
+      }
+      return true;
+    },
+
+    readJsonLdProduct: function () {
+      var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+      for (var i = 0; i < scripts.length; i++) {
+        var data;
+        try { data = JSON.parse(scripts[i].textContent); } catch (e) { continue; }
+        var nodes = [].concat(data && data['@graph'] ? data['@graph'] : data);
+        for (var j = 0; j < nodes.length; j++) {
+          var node = nodes[j];
+          var type = node && node['@type'];
+          if (type === 'Product' || (Array.isArray(type) && type.indexOf('Product') !== -1)) {
+            var offer = [].concat(node.offers || [])[0] || {};
+            if (offer.offers) offer = [].concat(offer.offers)[0] || offer;
+            return {
+              id: node.sku || node.productID || node.mpn || '',
+              name: node.name || '',
+              price: offer.price || offer.lowPrice || 0,
+              brand: node.brand && (node.brand.name || node.brand) || '',
+              currency: offer.priceCurrency || '',
+            };
+          }
+        }
+      }
+      return null;
+    },
+
+    // Generic fallback for any store: product schema, add-to-cart / checkout buttons and
+    // order confirmation URLs.
+    attachDomCommerce: function () {
+      var self = this;
+      var product = this.readJsonLdProduct();
+      if (product) {
+        this.ecomEmit('ViewContent', this.ecomProps([product], { currency: product.currency }), 'dom');
+      }
+      var label = function (el) {
+        return [el.innerText || el.textContent || '', el.value || '', el.getAttribute('aria-label') || '', el.getAttribute('name') || '', el.id || '', typeof el.className === 'string' ? el.className : '']
+          .join(' ').toLowerCase();
+      };
+      document.addEventListener('click', function (e) {
+        var el = e.target && e.target.closest ? e.target.closest('button, a, input[type="submit"], [role="button"]') : null;
+        if (!el) return;
+        var text = label(el);
+        if (/add[\s_-]*to[\s_-]*(cart|bag|basket)|buy[\s_-]*now|add_to_cart|single_add_to_cart/.test(text)) {
+          var item = self.readJsonLdProduct() || {
+            id: el.getAttribute('data-product-id') || el.getAttribute('data-product_id') || el.getAttribute('data-sku') || '',
+            name: (document.querySelector('h1') || {}).textContent || document.title,
+          };
+          self.ecomEmit('AddToCart', self.ecomProps([item], { currency: item.currency }), 'dom');
+        } else if (/(^|\s)(proceed[\s_-]*to[\s_-]*)?(checkout|place[\s_-]*order)(\s|$)/.test(text)) {
+          self.ecomEmit('InitiateCheckout', self.ecomProps([], { value: 0 }), 'dom');
+        }
+      }, true);
+      if (/(thank[-_]?you|order[-_]?(received|confirmation|complete|success)|checkout\/success|purchase[-_]?complete)/i.test(location.pathname)) {
+        var params = new URLSearchParams(location.search);
+        var orderId = params.get('order_id') || params.get('orderId') || params.get('order') || params.get('key') || location.pathname;
+        this.ecomEmit('Purchase', this.ecomProps([], { order_id: orderId, value: params.get('value') || params.get('total') || 0 }), 'dom');
+      }
     },
 
     // ── Search ──
@@ -546,6 +931,16 @@
         headers: { 'Content-Type': 'application/json', 'X-API-Key': this.config.apiKey },
         body: payload,
         keepalive: true,
+      }).then(function (response) {
+        if (!response.ok) throw new Error('Event batch rejected: ' + response.status);
+        if (response.status !== 207) return null;
+        return response.json().then(function (result) {
+          var failed = Array.isArray(result.results)
+            ? result.results.filter(function (item) { return item && item.success === false; })
+            : [];
+          var retry = failed.map(function (item) { return batch[item.index]; }).filter(Boolean);
+          if (retry.length) self.queue = retry.concat(self.queue);
+        });
       }).catch(function () {
         self.queue = batch.concat(self.queue);
       });
@@ -899,18 +1294,143 @@
     // ── Storage ──
 
     getCookie: function (name) {
-      var m = document.cookie.match('(^|;)\\s*' + STORAGE_PREFIX + name + '\\s*=\\s*([^;]+)');
-      return m ? m.pop() : null;
+      return this.getRawCookie(STORAGE_PREFIX + name);
     },
 
     setCookie: function (name, value, days) {
+      this.setRawCookie(STORAGE_PREFIX + name, value, days);
+    },
+
+    getRawCookie: function (name) {
+      var m = document.cookie.match('(^|;)\\s*' + name.replace(/[.$?*|{}()[\]\\/+^]/g, '\\$&') + '\\s*=\\s*([^;]+)');
+      if (!m) return null;
+      try { return decodeURIComponent(m.pop()); } catch (e) { return null; }
+    },
+
+    // days may be fractional (30 minutes = 30 / 1440). Cookies are set on the root domain so
+    // www.example.com and example.com share one visitor; Secure only on https so local test
+    // pages over http keep working.
+    setRawCookie: function (name, value, days) {
       var expires = '';
       if (days) {
         var d = new Date();
         d.setTime(d.getTime() + days * 86400000);
         expires = '; expires=' + d.toUTCString();
       }
-      document.cookie = STORAGE_PREFIX + name + '=' + (value || '') + expires + '; path=/; SameSite=Lax; Secure';
+      var domain = this.cookieDomain();
+      document.cookie = name + '=' + encodeURIComponent(value || '') + expires + '; path=/; SameSite=Lax'
+        + (domain ? '; domain=' + domain : '') + (location.protocol === 'https:' ? '; Secure' : '');
+    },
+
+    cookieDomain: function () {
+      if (this._cookieDomain !== undefined) return this._cookieDomain;
+      var host = location.hostname;
+      this._cookieDomain = '';
+      if (!host || /^[\d.]+$/.test(host) || host.indexOf('.') === -1) return '';
+      var parts = host.split('.');
+      // Shortest suffix the browser accepts is the registrable domain (handles .co.uk etc.).
+      for (var i = parts.length - 2; i >= 0; i--) {
+        var candidate = parts.slice(i).join('.');
+        document.cookie = '_cdp_tld=1; path=/; domain=' + candidate;
+        if (document.cookie.indexOf('_cdp_tld=1') !== -1) {
+          document.cookie = '_cdp_tld=; path=/; domain=' + candidate + '; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+          this._cookieDomain = candidate;
+          break;
+        }
+      }
+      return this._cookieDomain;
+    },
+
+    getJsonCookie: function (name) {
+      var raw = this.getCookie(name);
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    },
+
+    // ── Visits, sessions & attribution cookies ──
+
+    touchSession: function () {
+      this.setCookie('session_id', this.sessionId, 30 / 1440);
+    },
+
+    updateVisit: function () {
+      var t = nowMs();
+      var count = parseInt(this.getCookie('visit_count') || '0', 10) || 0;
+      var first = parseInt(this.getCookie('first_visit_at') || '', 10) || t;
+      var current = parseInt(this.getCookie('current_visit_at') || '', 10) || null;
+      var previous = parseInt(this.getCookie('last_visit_at') || '', 10) || null;
+      if (this.isNewSession || !current) {
+        // The visit that just ended becomes "last visit".
+        previous = current || previous;
+        current = t;
+        count += 1;
+        this.setCookie('visit_count', String(count), 365);
+        this.setCookie('current_visit_at', String(current), 365);
+        if (previous) this.setCookie('last_visit_at', String(previous), 365);
+      }
+      this.setCookie('first_visit_at', String(first), 365);
+      this.sessionStart = current;
+      this.visit = {
+        visit_count: count,
+        is_returning: count > 1,
+        first_visit_at: new Date(first).toISOString(),
+        current_visit_at: new Date(current).toISOString(),
+        last_visit_at: previous ? new Date(previous).toISOString() : null,
+        days_since_last_visit: previous ? Math.floor((current - previous) / 86400000) : null,
+        days_since_first_visit: Math.floor((current - first) / 86400000),
+      };
+    },
+
+    updateTouches: function () {
+      var a = collectAttribution();
+      var touch = {};
+      var keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid'];
+      for (var i = 0; i < keys.length; i++) if (a[keys[i]]) touch[keys[i]] = a[keys[i]];
+      var external = document.referrer && document.referrer.indexOf(location.host) === -1;
+      if (!Object.keys(touch).length && !external) return;
+      touch.referrer = document.referrer || '';
+      touch.landing_page = location.href.split('#')[0].slice(0, 500);
+      touch.at = now();
+      if (!this.getCookie('first_touch')) this.setCookie('first_touch', JSON.stringify(touch), 365);
+      // Last touch only moves for campaign/click traffic, not plain referrals of a known visitor.
+      if (Object.keys(touch).length > 3 || !this.getCookie('last_touch')) this.setCookie('last_touch', JSON.stringify(touch), 90);
+      var clicks = this.getJsonCookie('click_ids') || {};
+      var ids = ['gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid'];
+      var changed = false;
+      for (var j = 0; j < ids.length; j++) {
+        if (a[ids[j]]) { clicks[ids[j]] = a[ids[j]]; clicks[ids[j] + '_at'] = now(); changed = true; }
+      }
+      if (changed) this.setCookie('click_ids', JSON.stringify(clicks), 90);
+    },
+
+    // Meta browser cookies, in Meta's own format, so CAPI can match and dedupe with the pixel.
+    updateAdCookies: function () {
+      if (this.config.consentRequired && !this.consent.marketing) return;
+      var t = nowMs();
+      if (!this.getRawCookie('_fbp')) {
+        this.setRawCookie('_fbp', 'fb.1.' + t + '.' + Math.floor(1e9 + Math.random() * 9e9), 90);
+      }
+      var fbclid = new URLSearchParams(location.search).get('fbclid');
+      var fbc = this.getRawCookie('_fbc');
+      if (fbclid && (!fbc || fbc.split('.').slice(3).join('.') !== fbclid)) {
+        this.setRawCookie('_fbc', 'fb.1.' + t + '.' + fbclid, 90);
+      }
+    },
+
+    collectContext: function () {
+      return {
+        library: { name: 'cdp.js', version: SDK_VERSION },
+        cookies: { _fbp: this.getRawCookie('_fbp') || '', _fbc: this.getRawCookie('_fbc') || '' },
+        click_ids: this.getJsonCookie('click_ids') || {},
+        first_touch: this.getJsonCookie('first_touch'),
+        last_touch: this.getJsonCookie('last_touch'),
+        visit: this.visit || null,
+        website_type: this.config.websiteType || '',
+        website_country: this.config.country || '',
+        website_currency: this.config.currency || '',
+        store_platform: this._platform || '',
+        consent: { ads: !(this.config.consentRequired && !this.consent.marketing), analytics: this.consent.analytics !== false },
+      };
     },
 
     getSessionStorage: function (key) {
@@ -959,6 +1479,10 @@
     GTMTracker.config.debug = cfg.debug || GTMTracker.config.debug;
 
     if (cfg.consentRequired !== undefined) GTMTracker.config.consentRequired = cfg.consentRequired;
+    if (cfg.ecommerce !== undefined) GTMTracker.config.ecommerce = !!cfg.ecommerce;
+    if (cfg.websiteType) GTMTracker.config.websiteType = cfg.websiteType;
+    if (cfg.currency) GTMTracker.config.currency = cfg.currency;
+    if (cfg.country) GTMTracker.config.country = cfg.country;
     if (cfg.respectDoNotTrack !== undefined) GTMTracker.config.respectDoNotTrack = cfg.respectDoNotTrack;
 
     if (GTMTracker.config.apiKey) GTMTracker.init(cfg);
